@@ -54,6 +54,14 @@ function loadHls() {
 }
 
 class EzvizRecordingsPanel extends HTMLElement {
+  _dbg(...args) {
+    if (!this._debug) return;
+    const line = `${new Date().toISOString().slice(11, 19)} ${args.join(" ")}`;
+    this._debugLines = [...(this._debugLines || []).slice(-24), line];
+    const box = this.shadowRoot.querySelector(".debug");
+    if (box) box.textContent = this._debugLines.join(String.fromCharCode(10));
+  }
+
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
@@ -101,6 +109,7 @@ class EzvizRecordingsPanel extends HTMLElement {
       this._cameras = [];
     }
     const params = new URLSearchParams(location.search);
+    this._debug = params.has("debug");
     const wanted = params.get("camera");
     this._camera =
       this._cameras.find((c) => c.entry_id === wanted || c.name.toLowerCase() === (wanted || "").toLowerCase()) ||
@@ -153,6 +162,8 @@ class EzvizRecordingsPanel extends HTMLElement {
         .quick { margin-top:10px; }
         .quick .chip { min-height:36px; font-size:14px; }
         .empty { padding:24px 4px; color:var(--secondary-text-color); }
+        .debug { font:12px/1.35 monospace; white-space:pre-wrap; word-break:break-all; background:var(--card-background-color);
+                 border-radius:12px; padding:8px; margin-top:12px; max-height:340px; overflow:auto; }
         @media (min-width: 900px) {
           .grid { display:grid; grid-template-columns: 1.6fr 1fr; gap:16px; align-items:start; }
           .player { position:relative; top:auto; margin:0; }
@@ -189,7 +200,8 @@ class EzvizRecordingsPanel extends HTMLElement {
               </div>
             </div>
           </div>
-        </div>`}
+        </div>
+        ${this._debug ? `<pre class="debug"></pre>` : ""}`}
       </div>`;
     const menu = this.shadowRoot.querySelector("ha-menu-button");
     if (menu) { menu.hass = this._hass; menu.narrow = this._narrow; }
@@ -227,6 +239,7 @@ class EzvizRecordingsPanel extends HTMLElement {
 
   _teardown(stopRemote) {
     clearInterval(this._tick);
+    clearInterval(this._dbgTick);
     clearTimeout(this._watchdog);
     this._tick = null;
     if (this._hls) { this._hls.destroy(); this._hls = null; }
@@ -286,6 +299,26 @@ class EzvizRecordingsPanel extends HTMLElement {
       this._setStatus("", false);
     };
     video.addEventListener("playing", onPlaying, { once: true });
+    if (this._debug) {
+      const ms = window.MediaSource || window.ManagedMediaSource;
+      this._dbg("url ok, native HLS:", video.canPlayType("application/vnd.apple.mpegurl") || "no",
+        "| MSE avc1.4d0029:", ms ? ms.isTypeSupported('video/mp4; codecs="avc1.4d0029,mp4a.40.2"') : "no MSE",
+        "| avc1.4d0032:", ms ? ms.isTypeSupported('video/mp4; codecs="avc1.4d0032"') : "-");
+      ["loadedmetadata", "loadeddata", "canplay", "playing", "waiting", "stalled", "pause", "ended", "error", "seeking", "seeked"]
+        .forEach((ev) => video.addEventListener(ev, () => {
+          if (request === this._request) this._dbg("video", ev, `t=${video.currentTime.toFixed(2)}`, `rs=${video.readyState}`,
+            `${video.videoWidth}x${video.videoHeight}`, video.error ? `err=${video.error.code} ${video.error.message}` : "");
+        }));
+      clearInterval(this._dbgTick);
+      this._dbgTick = setInterval(() => {
+        if (request !== this._request) return;
+        const b = video.buffered; const ranges = [];
+        for (let i = 0; i < b.length; i++) ranges.push(`${b.start(i).toFixed(1)}-${b.end(i).toFixed(1)}`);
+        const q = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality() : null;
+        this._dbg("tick", `t=${video.currentTime.toFixed(2)}`, `rs=${video.readyState}`, `paused=${video.paused}`,
+          `buf=[${ranges.join(",")}]`, q ? `frames=${q.totalVideoFrames} dropped=${q.droppedVideoFrames}` : "");
+      }, 2000);
+    }
     // buffering after the start (e.g. waiting for the next HLS segment): show the spinner only
     video.onwaiting = () => { if (request === this._request && this._t0 !== null) this._setStatus("", true); };
     video.onplaying = () => { if (request === this._request && this._t0 !== null) this._setStatus("", false); };
@@ -315,6 +348,14 @@ class EzvizRecordingsPanel extends HTMLElement {
         levelLoadingMaxRetry: 3,
       });
       this._hls.on(Hls.Events.MANIFEST_PARSED, startPlayback);
+      if (this._debug) {
+        const E = Hls.Events;
+        this._hls.on(E.MANIFEST_PARSED, (_e, d) => this._dbg("hls manifest", d.levels.map((l) => `${l.codecSet || l.attrs?.CODECS} ${l.width}x${l.height}`).join(";")));
+        this._hls.on(E.LEVEL_LOADED, (_e, d) => this._dbg("hls level", `live=${d.details.live}`, `frags=${d.details.fragments.length}`, `target=${d.details.targetduration}`, `edge=${d.details.edge?.toFixed?.(1)}`));
+        this._hls.on(E.BUFFER_CODECS, (_e, d) => this._dbg("hls codecs", Object.entries(d).map(([k, v]) => `${k}:${v.codec || v.levelCodec}`).join(" ")));
+        this._hls.on(E.FRAG_BUFFERED, (_e, d) => this._dbg("hls frag", d.frag.sn, d.frag.type, `start=${d.frag.start.toFixed(1)}`));
+        this._hls.on(E.ERROR, (_e, d) => this._dbg("hls ERROR", `fatal=${d.fatal}`, d.type, d.details, d.reason || d.error?.message || ""));
+      }
       this._hls.on(Hls.Events.ERROR, (_e, data) => {
         if (data.fatal && request === this._request) {
           console.warn("ezviz-recordings: playback error", data.type, data.details);
