@@ -336,4 +336,4 @@ class EzvizRecordingsPanel extends HTMLElement {
   }
 }
 
-customElements.define("ezviz-recordings-panel", EzvizRecordingsPanel);
+if (!customElements.get("ezviz-recordings-panel")) customElements.define("ezviz-recordings-panel", EzvizRecordingsPanel);

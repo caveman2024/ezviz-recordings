@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from homeassistant.components import frontend, panel_custom
@@ -49,19 +50,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: RecordingsConfigEntry) -
         password=entry.data[CONF_PASSWORD],
         port=entry.data.get(CONF_PORT, DEFAULT_RTSP_PORT),
     )
-    if PANEL_URL_PATH not in hass.data.get("frontend_panels", {}):
-        await panel_custom.async_register_panel(
-            hass,
-            frontend_url_path=PANEL_URL_PATH,
-            webcomponent_name=PANEL_COMPONENT,
-            sidebar_title="EZVIZ",
-            sidebar_icon=PANEL_ICON,
-            module_url=f"{STATIC_URL}/ezviz-recordings-panel.js?v={VERSION}",
-            require_admin=False,
-            config={},
-        )
+    await _async_register_panel(hass)
     entry.async_on_unload(entry.add_update_listener(_async_reload))
     return True
+
+
+def _panel_fingerprint() -> str:
+    data = (Path(__file__).parent / "frontend" / "ezviz-recordings-panel.js").read_bytes()
+    return hashlib.sha256(data).hexdigest()[:12]
+
+
+async def _async_register_panel(hass: HomeAssistant) -> None:
+    """(Re)register the sidebar panel; the URL changes with the file so browsers never keep a stale copy."""
+    fingerprint = await hass.async_add_executor_job(_panel_fingerprint)
+    frontend.async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False)
+    await panel_custom.async_register_panel(
+        hass,
+        frontend_url_path=PANEL_URL_PATH,
+        webcomponent_name=PANEL_COMPONENT,
+        sidebar_title="EZVIZ",
+        sidebar_icon=PANEL_ICON,
+        module_url=f"{STATIC_URL}/ezviz-recordings-panel.js?v={VERSION}-{fingerprint}",
+        require_admin=False,
+        config={},
+    )
 
 
 async def _async_reload(hass: HomeAssistant, entry: RecordingsConfigEntry) -> None:
