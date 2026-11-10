@@ -17,6 +17,8 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import logging
+import secrets
+import time
 from urllib.parse import quote
 
 from homeassistant.components.camera import DynamicStreamSettings
@@ -28,6 +30,7 @@ from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
     DEFAULT_RTSP_PORT,
+    MP4_TOKEN_TTL,
     PLAYBACK_WINDOW_HOURS,
     THUMBNAIL_CACHE_SIZE,
     THUMBNAIL_TIMEOUT,
@@ -57,6 +60,8 @@ class RecordingCamera:
     _stream: Stream | None = field(default=None, init=False, repr=False)
     _thumb_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
     _thumbs: OrderedDict[str, bytes] = field(default_factory=OrderedDict, init=False, repr=False)
+    _mp4_tokens: dict[str, tuple[datetime, float]] = field(default_factory=dict, init=False, repr=False)
+    _mp4_process: asyncio.subprocess.Process | None = field(default=None, init=False, repr=False)
 
     def _base_url(self) -> str:
         user = quote(self.username, safe="")
@@ -104,6 +109,65 @@ class RecordingCamera:
         if self._stream is not None:
             stream, self._stream = self._stream, None
             await stream.stop()
+        await self._async_kill_mp4()
+
+    # --- low-latency path: fragmented MP4 over HTTP --------------------------------------
+    # Home Assistant's HLS waits for a full (~8 s) segment before the first byte reaches the
+    # browser. Here ffmpeg only remuxes and flushes 0.5 s fragments, so the picture shows up
+    # as soon as the camera sends its first key frame. The session ends when the client
+    # disconnects.
+
+    def new_mp4_token(self, start: datetime) -> str:
+        """Authorize one MP4 playback from start (the URL is the credential, like HLS)."""
+        now = time.monotonic()
+        self._mp4_tokens = {k: v for k, v in self._mp4_tokens.items() if v[1] > now}
+        token = secrets.token_urlsafe(24)
+        self._mp4_tokens[token] = (start, now + MP4_TOKEN_TTL)
+        return token
+
+    def start_for_token(self, token: str) -> datetime | None:
+        """Return the start time of a valid token."""
+        item = self._mp4_tokens.get(token)
+        if item is None or item[1] < time.monotonic():
+            return None
+        return item[0]
+
+    async def async_open_mp4(self, start: datetime) -> asyncio.subprocess.Process:
+        """Start ffmpeg remuxing the SD recording to fragmented MP4 on stdout."""
+        if self._stream is not None:
+            stream, self._stream = self._stream, None
+            await stream.stop()
+        await self._async_kill_mp4()
+        async with self._thumb_lock:
+            url = self.playback_url(start, start + timedelta(hours=PLAYBACK_WINDOW_HOURS))
+            process = await asyncio.create_subprocess_exec(
+                get_ffmpeg_manager(self.hass).binary, "-hide_banner", "-loglevel", "error",
+                "-rtsp_transport", "tcp", "-timeout", "8000000",
+                "-probesize", "32768", "-analyzeduration", "200000", "-fflags", "nobuffer",
+                "-i", url, "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy",
+                # the first frame of an SD playback is a key frame that ffmpeg does not flag as
+                # such: without -copyinkf it is dropped and the picture waits for the next GOP (~4 s)
+                "-copyinkf", "-max_interleave_delta", "0",
+                "-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+                "-frag_duration", "500000", "-flush_packets", "1", "pipe:1",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+        self._mp4_process = process
+        _LOGGER.debug("%s: mp4 playback from %s", self.name, camera_time(start))
+        return process
+
+    async def async_close_mp4(self, process: asyncio.subprocess.Process) -> None:
+        """Stop one ffmpeg process (if it is still the current one, forget it)."""
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
+        if self._mp4_process is process:
+            self._mp4_process = None
+
+    async def _async_kill_mp4(self) -> None:
+        if self._mp4_process is not None:
+            await self.async_close_mp4(self._mp4_process)
 
     async def async_thumbnail(self, at: datetime) -> bytes:
         """Return one JPEG frame of the recording at the given time."""
@@ -111,7 +175,7 @@ class RecordingCamera:
         if (cached := self._thumbs.get(key)) is not None:
             self._thumbs.move_to_end(key)
             return cached
-        if self._stream is not None:
+        if self._stream is not None or self._mp4_process is not None:
             raise HomeAssistantError("busy")  # one RTSP session per camera
         async with self._thumb_lock:
             if (cached := self._thumbs.get(key)) is not None:

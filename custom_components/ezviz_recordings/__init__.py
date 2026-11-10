@@ -24,6 +24,7 @@ from .const import (
 )
 
 from .playback import RecordingCamera
+from .http_views import RecordingMp4View
 from .websocket_api import async_register_websocket_commands
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -37,6 +38,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "frontend"), cache_headers=False)]
     )
     async_register_websocket_commands(hass)
+    hass.http.register_view(RecordingMp4View(hass))
     return True
 
 

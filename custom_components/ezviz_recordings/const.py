@@ -19,6 +19,8 @@ STATIC_URL = "/ezviz_recordings_static"
 # itself when nobody watches it (Home Assistant HLS idle timeout).
 PLAYBACK_WINDOW_HOURS = 2
 
+MP4_TOKEN_TTL = 120  # seconds a playback URL stays valid
+
 THUMBNAIL_CACHE_SIZE = 120
 THUMBNAIL_TIMEOUT = 25
 THUMBNAIL_WIDTH = 640

@@ -320,7 +320,8 @@ class EzvizRecordingsPanel extends HTMLElement {
       }, 2000);
     }
     // buffering after the start (e.g. waiting for the next HLS segment): show the spinner only
-    video.onwaiting = () => { if (request === this._request && this._t0 !== null) this._setStatus("", true); };
+    // the native controls already show their own spinner while buffering
+    video.onwaiting = () => { if (request === this._request && this._t0 !== null && !video.controls) this._setStatus("", true); };
     video.onplaying = () => { if (request === this._request && this._t0 !== null) this._setStatus("", false); };
     const startPlayback = () => {
       if (request === this._request) video.play().catch(() => {});
@@ -344,6 +345,9 @@ class EzvizRecordingsPanel extends HTMLElement {
       // same loading timeouts the Home Assistant camera player uses
       this._hls = new Hls({
         lowLatencyMode: false,
+        // start at the first segment (the requested moment) instead of the live edge: no stall after
+        // the first seconds, and the footage starts exactly where the user asked
+        startPosition: 0,
         backBufferLength: 60,
         manifestLoadingTimeOut: 30000,
         levelLoadingTimeOut: 30000,
