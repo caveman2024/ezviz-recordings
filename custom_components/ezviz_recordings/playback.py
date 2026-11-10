@@ -28,6 +28,7 @@ from homeassistant.components.stream.const import CONF_RTSP_TRANSPORT, HLS_PROVI
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
+from .events import EventSource
 from .const import (
     DEFAULT_RTSP_PORT,
     MP4_TOKEN_TTL,
@@ -57,6 +58,8 @@ class RecordingCamera:
     username: str
     password: str
     port: int = DEFAULT_RTSP_PORT
+    events: EventSource | None = None
+    alarm_entity: str | None = None
     _stream: Stream | None = field(default=None, init=False, repr=False)
     _thumb_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
     _thumbs: OrderedDict[str, bytes] = field(default_factory=OrderedDict, init=False, repr=False)

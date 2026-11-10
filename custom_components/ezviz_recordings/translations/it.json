@@ -52,5 +52,17 @@
       "already_configured": "Questa telecamera è già configurata.",
       "reconfigure_successful": "Telecamera aggiornata."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opzioni",
+        "description": "Gli eventi di rilevamento arrivano dall'integrazione EZVIZ (account cloud). L'entità allarme colora i periodi inseriti sulla linea del tempo.",
+        "data": {
+          "alarm_entity": "Allarme (mostra quando era inserito)",
+          "serial": "Numero di serie della telecamera (per leggere gli eventi dall'integrazione EZVIZ)"
+        }
+      }
+    }
   }
 }

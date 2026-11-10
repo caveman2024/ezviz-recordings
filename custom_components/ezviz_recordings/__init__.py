@@ -14,6 +14,8 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
+    CONF_ALARM_ENTITY,
+    CONF_SERIAL,
     VERSION,
     DEFAULT_RTSP_PORT,
     DOMAIN,
@@ -23,6 +25,7 @@ from .const import (
     STATIC_URL,
 )
 
+from .events import EventSource
 from .playback import RecordingCamera
 from .http_views import RecordingMp4View
 from .websocket_api import async_register_websocket_commands
@@ -51,7 +54,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: RecordingsConfigEntry) -
         username=entry.data[CONF_USERNAME],
         password=entry.data[CONF_PASSWORD],
         port=entry.data.get(CONF_PORT, DEFAULT_RTSP_PORT),
+        alarm_entity=entry.options.get(CONF_ALARM_ENTITY) or None,
     )
+    serial = entry.options.get(CONF_SERIAL) or entry.data.get(CONF_SERIAL)
+    if serial:
+        entry.runtime_data.events = EventSource(hass, serial, entry.data[CONF_PASSWORD])
     await _async_register_panel(hass)
     entry.async_on_unload(entry.add_update_listener(_async_reload))
     return True

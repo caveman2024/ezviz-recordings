@@ -9,11 +9,13 @@ from urllib.parse import quote
 import voluptuous as vol
 
 from homeassistant.components.ffmpeg import get_ffmpeg_manager
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.selector import (
+    EntitySelector,
+    EntitySelectorConfig,
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
@@ -22,7 +24,7 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
-from .const import CONF_SERIAL, DEFAULT_RTSP_PORT, DEFAULT_USERNAME, DOMAIN
+from .const import CONF_ALARM_ENTITY, CONF_SERIAL, DEFAULT_RTSP_PORT, DEFAULT_USERNAME, DOMAIN
 
 EZVIZ_DOMAIN = "ezviz"
 PASSWORD_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
@@ -49,6 +51,11 @@ class EzvizRecordingsConfigFlow(ConfigFlow, domain=DOMAIN):
     """Add one camera per config entry."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> EzvizRecordingsOptionsFlow:
+        return EzvizRecordingsOptionsFlow()
 
     def __init__(self) -> None:
         self._import: dict[str, Any] = {}
@@ -183,3 +190,21 @@ class EzvizRecordingsConfigFlow(ConfigFlow, domain=DOMAIN):
             ),
             errors=errors,
         )
+
+
+class EzvizRecordingsOptionsFlow(OptionsFlow):
+    """Alarm entity for the armed periods, and the serial used to read detection events."""
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+        options = self.config_entry.options
+        serial = options.get(CONF_SERIAL) or self.config_entry.data.get(CONF_SERIAL, "")
+        schema: dict[Any, Any] = {
+            vol.Optional(
+                CONF_ALARM_ENTITY,
+                description={"suggested_value": options.get(CONF_ALARM_ENTITY)},
+            ): EntitySelector(EntitySelectorConfig(domain="alarm_control_panel")),
+            vol.Optional(CONF_SERIAL, description={"suggested_value": serial}): str,
+        }
+        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema))

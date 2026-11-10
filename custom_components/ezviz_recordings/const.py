@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 DOMAIN = "ezviz_recordings"
-VERSION = "0.1.0"  # keep in sync with manifest.json
+VERSION = "0.2.0"  # keep in sync with manifest.json
 
 CONF_SERIAL = "serial"
+CONF_ALARM_ENTITY = "alarm_entity"
 
 DEFAULT_USERNAME = "admin"
 DEFAULT_RTSP_PORT = 554
