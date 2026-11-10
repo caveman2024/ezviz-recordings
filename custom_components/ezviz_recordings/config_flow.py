@@ -63,7 +63,7 @@ class EzvizRecordingsConfigFlow(ConfigFlow, domain=DOMAIN):
             if CONF_PASSWORD not in data or CONF_USERNAME not in data:
                 continue  # the cloud-account entry, not a camera
             serial = entry.title
-            device = devices.async_get_device(identifiers={(EZVIZ_DOMAIN, serial)})
+            device = devices.async_get_device_by_identifier((EZVIZ_DOMAIN, serial), entry.entry_id)
             name = (device.name_by_user or device.name) if device else serial
             host = ""
             if device:

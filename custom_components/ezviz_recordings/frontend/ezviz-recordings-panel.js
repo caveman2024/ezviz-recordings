@@ -167,7 +167,7 @@ class EzvizRecordingsPanel extends HTMLElement {
         <div class="grid">
           <div class="player">
             <img class="poster" alt="">
-            <video playsinline muted controls></video>
+            <video playsinline muted autoplay></video>
             <div class="badge" hidden><b>${t.sd}</b><span class="pos"></span></div>
             <div class="spinner"></div>
             <div class="status"></div>
@@ -227,6 +227,7 @@ class EzvizRecordingsPanel extends HTMLElement {
 
   _teardown(stopRemote) {
     clearInterval(this._tick);
+    clearTimeout(this._watchdog);
     this._tick = null;
     if (this._hls) { this._hls.destroy(); this._hls = null; }
     const video = this.shadowRoot.querySelector("video");
@@ -256,6 +257,7 @@ class EzvizRecordingsPanel extends HTMLElement {
     pos.textContent = this._format(start);
     this._setStatus(t.opening, true);
     poster.style.display = "none";
+    video.controls = false; // the native controls show a second spinner while loading
 
     // a still of the chosen moment shows up while the stream opens
     this._hass.callWS({ type: "ezviz_recordings/thumbnail", entry_id: camera.entry_id, at: toIso(start) })
@@ -278,24 +280,47 @@ class EzvizRecordingsPanel extends HTMLElement {
     const onPlaying = () => {
       if (request !== this._request) return;
       if (this._t0 === null) this._t0 = video.currentTime;
+      clearTimeout(this._watchdog);
       poster.style.display = "none";
+      video.controls = true;
       this._setStatus("", false);
     };
     video.addEventListener("playing", onPlaying, { once: true });
+    const startPlayback = () => {
+      if (request === this._request) video.play().catch(() => {});
+    };
+    // Home Assistant needs 10-15 s to publish the first HLS segment of an SD recording
+    clearTimeout(this._watchdog);
+    this._watchdog = setTimeout(() => {
+      if (request === this._request && this._t0 === null) this._setStatus(t.failed, false);
+    }, 45000);
 
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = url;
+      video.addEventListener("loadedmetadata", startPlayback, { once: true });
     } else {
       const Hls = await loadHls();
       if (request !== this._request) return;
-      this._hls = new Hls({ lowLatencyMode: false, liveSyncDurationCount: 2, manifestLoadingMaxRetry: 6 });
-      this._hls.on(Hls.Events.ERROR, (_e, data) => {
-        if (data.fatal && request === this._request) this._setStatus(t.failed, false);
+      // same loading timeouts the Home Assistant camera player uses
+      this._hls = new Hls({
+        lowLatencyMode: false,
+        backBufferLength: 60,
+        manifestLoadingTimeOut: 30000,
+        levelLoadingTimeOut: 30000,
+        fragLoadingTimeOut: 30000,
+        manifestLoadingMaxRetry: 3,
+        levelLoadingMaxRetry: 3,
       });
-      this._hls.loadSource(url);
+      this._hls.on(Hls.Events.MANIFEST_PARSED, startPlayback);
+      this._hls.on(Hls.Events.ERROR, (_e, data) => {
+        if (data.fatal && request === this._request) {
+          console.warn("ezviz-recordings: playback error", data.type, data.details);
+          this._setStatus(`${t.failed} (${data.details})`, false);
+        }
+      });
       this._hls.attachMedia(video);
+      this._hls.loadSource(url);
     }
-    video.play().catch(() => {});
     this._tick = setInterval(() => {
       const p = this._position();
       if (p) pos.textContent = this._format(p);
