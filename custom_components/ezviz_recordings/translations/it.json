@@ -1,0 +1,56 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Aggiungi una telecamera",
+        "menu_options": {
+          "pick_ezviz": "Usa una telecamera dell'integrazione EZVIZ",
+          "manual": "Inserisci indirizzo e codice di verifica"
+        }
+      },
+      "pick_ezviz": {
+        "title": "Telecamera EZVIZ",
+        "data": {
+          "serial": "Telecamera"
+        }
+      },
+      "confirm": {
+        "title": "Conferma la telecamera {serial}",
+        "description": "Nome utente e codice di verifica vengono copiati dall'integrazione EZVIZ. Controlla l'indirizzo IP locale della telecamera.",
+        "data": {
+          "name": "Nome",
+          "host": "Indirizzo IP locale",
+          "port": "Porta RTSP"
+        }
+      },
+      "manual": {
+        "title": "Dati della telecamera",
+        "description": "La password è il codice di verifica di 6 lettere sull'etichetta della telecamera (o quello impostato nell'app EZVIZ).",
+        "data": {
+          "name": "Nome",
+          "host": "Indirizzo IP locale",
+          "port": "Porta RTSP",
+          "username": "Nome utente",
+          "password": "Codice di verifica"
+        }
+      },
+      "reconfigure": {
+        "title": "Modifica i dati della telecamera",
+        "description": "Lascia vuoto il codice di verifica per tenere quello attuale.",
+        "data": {
+          "host": "Indirizzo IP locale",
+          "port": "Porta RTSP",
+          "username": "Nome utente",
+          "password": "Codice di verifica"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "La telecamera non risponde con questi dati."
+    },
+    "abort": {
+      "already_configured": "Questa telecamera è già configurata.",
+      "reconfigure_successful": "Telecamera aggiornata."
+    }
+  }
+}

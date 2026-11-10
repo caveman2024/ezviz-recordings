@@ -1,0 +1,56 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a camera",
+        "menu_options": {
+          "pick_ezviz": "Use a camera from the EZVIZ integration",
+          "manual": "Enter address and verification code"
+        }
+      },
+      "pick_ezviz": {
+        "title": "EZVIZ camera",
+        "data": {
+          "serial": "Camera"
+        }
+      },
+      "confirm": {
+        "title": "Confirm camera {serial}",
+        "description": "The user name and verification code are copied from the EZVIZ integration. Check the local IP address of the camera.",
+        "data": {
+          "name": "Name",
+          "host": "Local IP address",
+          "port": "RTSP port"
+        }
+      },
+      "manual": {
+        "title": "Camera details",
+        "description": "The password is the 6-letter verification code on the camera label (or the one you set in the EZVIZ app).",
+        "data": {
+          "name": "Name",
+          "host": "Local IP address",
+          "port": "RTSP port",
+          "username": "User name",
+          "password": "Verification code"
+        }
+      },
+      "reconfigure": {
+        "title": "Change camera details",
+        "description": "Leave the verification code empty to keep the current one.",
+        "data": {
+          "host": "Local IP address",
+          "port": "RTSP port",
+          "username": "User name",
+          "password": "Verification code"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "The camera did not answer with these details."
+    },
+    "abort": {
+      "already_configured": "This camera is already configured.",
+      "reconfigure_successful": "Camera updated."
+    }
+  }
+}
