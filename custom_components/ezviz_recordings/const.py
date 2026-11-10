@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 DOMAIN = "ezviz_recordings"
-VERSION = "0.3.0"  # keep in sync with manifest.json
+VERSION = "0.4.0"  # keep in sync with manifest.json
 
 CONF_SERIAL = "serial"
+EVENT_DETECTION = f"{DOMAIN}_detection"
+SIGNAL_DETECTION = f"{DOMAIN}_detection_signal"
 CONF_ALARM_ENTITY = "alarm_entity"
 
 DEFAULT_USERNAME = "admin"

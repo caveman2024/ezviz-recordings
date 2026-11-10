@@ -48,3 +48,24 @@ class RecordingMp4View(HomeAssistantView):
         finally:
             await camera.async_close_mp4(process)
         return response
+
+
+class EventImageView(HomeAssistantView):
+    """Decrypted snapshot of a detection (for notifications and the panel). Requires login."""
+
+    url = "/api/ezviz_recordings/event_image/{entry_id}/{event_id}"
+    name = "api:ezviz_recordings:event_image"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self.hass = hass
+
+    async def get(self, request: web.Request, entry_id: str, event_id: str) -> web.Response:
+        entry = self.hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.domain != DOMAIN or not hasattr(entry, "runtime_data"):
+            return web.Response(status=404)
+        events = entry.runtime_data.events
+        image = await events.async_image(event_id) if events else None
+        if image is None:
+            return web.Response(status=404)
+        return web.Response(body=image, content_type="image/jpeg", headers={"Cache-Control": "private, max-age=3600"})

@@ -64,5 +64,21 @@
         }
       }
     }
+  },
+  "entity": {
+    "event": {
+      "detection": {
+        "name": "Rilevamento",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "person": "Persona",
+              "motion": "Movimento",
+              "other": "Altro"
+            }
+          }
+        }
+      }
+    }
   }
 }

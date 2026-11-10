@@ -8,7 +8,7 @@ from pathlib import Path
 from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
+from homeassistant.const import Platform, CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.typing import ConfigType
@@ -27,10 +27,12 @@ from .const import (
 
 from .events import EventSource
 from .playback import RecordingCamera
-from .http_views import RecordingMp4View
+from .http_views import EventImageView, RecordingMp4View
+from .poller import DetectionPoller
 from .websocket_api import async_register_websocket_commands
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+PLATFORMS = [Platform.EVENT]
 
 type RecordingsConfigEntry = ConfigEntry[RecordingCamera]
 
@@ -42,6 +44,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     )
     async_register_websocket_commands(hass)
     hass.http.register_view(RecordingMp4View(hass))
+    hass.http.register_view(EventImageView(hass))
     return True
 
 
@@ -60,6 +63,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: RecordingsConfigEntry) -
     if serial:
         entry.runtime_data.events = EventSource(hass, serial, entry.data[CONF_PASSWORD])
     await _async_register_panel(hass)
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    if DOMAIN not in hass.data:
+        hass.data[DOMAIN] = DetectionPoller(hass)
     entry.async_on_unload(entry.add_update_listener(_async_reload))
     return True
 
@@ -91,10 +97,14 @@ async def _async_reload(hass: HomeAssistant, entry: RecordingsConfigEntry) -> No
 
 async def async_unload_entry(hass: HomeAssistant, entry: RecordingsConfigEntry) -> bool:
     """Stop playback and remove the panel when the last camera goes away."""
+    if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+        return False
     await entry.runtime_data.async_stop()
     others = [
         e for e in hass.config_entries.async_loaded_entries(DOMAIN) if e.entry_id != entry.entry_id
     ]
     if not others:
         frontend.async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False)
+        if (poller := hass.data.pop(DOMAIN, None)) is not None:
+            poller.async_stop()
     return True

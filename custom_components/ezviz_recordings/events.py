@@ -92,6 +92,33 @@ class EventSource:
                 self._merge(key, messages)
         return days.get(key, [])
 
+    async def async_new_events(self, day: date) -> list[dict[str, Any]]:
+        """Fetch the day from the cloud now and return the events not seen before.
+
+        The first fetch of a day only records what is there (no flood of old events after
+        a restart), except events of the last couple of minutes.
+        """
+        days = await self._async_load()
+        key = day.isoformat()
+        client = _ezviz_client(self.hass)
+        if client is None:
+            return []
+        had = key in days
+        known = {event["id"] for event in days.get(key, [])}
+        try:
+            messages = await self.hass.async_add_executor_job(self._fetch_day, client, day)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("%s: cannot read events of %s: %s", self.serial, key, err)
+            return []
+        self._fetched[key] = time.monotonic()
+        self._merge(key, messages)
+        new = [event for event in self._days.get(key, []) if event["id"] not in known]
+        recent = (dt_util.now().replace(tzinfo=None) - timedelta(minutes=10)).isoformat(timespec="seconds")
+        if not had:
+            recent = (dt_util.now().replace(tzinfo=None) - timedelta(minutes=2)).isoformat(timespec="seconds")
+        # never announce old events as new
+        return [event for event in new if event["time"] >= recent]
+
     def _fetch_day(self, client: Any, day: date) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = []
         end_time = ""
