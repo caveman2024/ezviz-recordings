@@ -331,12 +331,16 @@ class EzvizRecordingsPanel extends HTMLElement {
       if (request === this._request && this._t0 === null && !retry()) this._setStatus(t.failed, false);
     }, 30000);
 
-    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+    // Prefer hls.js (MSE) like the Home Assistant camera player: recent desktop Chrome claims native HLS
+    // support but fails to parse Home Assistant's fMP4 playlists (DEMUXER_ERROR_COULD_NOT_PARSE).
+    const Hls = await loadHls().catch(() => null);
+    if (request !== this._request) return;
+    if (!Hls || !Hls.isSupported()) {
+      this._dbg("player: native HLS");
       video.src = url;
       video.addEventListener("loadedmetadata", startPlayback, { once: true });
     } else {
-      const Hls = await loadHls();
-      if (request !== this._request) return;
+      this._dbg("player: hls.js", Hls.version);
       // same loading timeouts the Home Assistant camera player uses
       this._hls = new Hls({
         lowLatencyMode: false,
