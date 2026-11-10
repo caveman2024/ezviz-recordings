@@ -80,6 +80,11 @@ class RecordingCamera:
     async def async_play(self, start: datetime) -> str:
         """Start replaying from start and return the HLS playlist URL."""
         await self.async_stop()
+        # the camera rejects a second RTSP session while a thumbnail is being grabbed
+        async with self._thumb_lock:
+            return await self._async_start_stream(start)
+
+    async def _async_start_stream(self, start: datetime) -> str:
         url = self.playback_url(start, start + timedelta(hours=PLAYBACK_WINDOW_HOURS))
         stream = create_stream(
             self.hass,
@@ -106,6 +111,8 @@ class RecordingCamera:
         if (cached := self._thumbs.get(key)) is not None:
             self._thumbs.move_to_end(key)
             return cached
+        if self._stream is not None:
+            raise HomeAssistantError("busy")  # one RTSP session per camera
         async with self._thumb_lock:
             if (cached := self._thumbs.get(key)) is not None:
                 return cached

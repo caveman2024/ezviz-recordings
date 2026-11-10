@@ -238,7 +238,7 @@ class EzvizRecordingsPanel extends HTMLElement {
     }
   }
 
-  async _play(start) {
+  async _play(start, attempt = 0) {
     if (!this._camera) return;
     const t = this._t;
     const request = ++this._request;
@@ -259,19 +259,19 @@ class EzvizRecordingsPanel extends HTMLElement {
     poster.style.display = "none";
     video.controls = false; // the native controls show a second spinner while loading
 
-    // a still of the chosen moment shows up while the stream opens
-    this._hass.callWS({ type: "ezviz_recordings/thumbnail", entry_id: camera.entry_id, at: toIso(start) })
-      .then((res) => {
-        if (request !== this._request || this._t0 !== null) return;
-        poster.src = `data:${res.content_type};base64,${res.data}`;
-        poster.style.display = "block";
-      }).catch(() => {});
+    // no thumbnail here: the camera rejects a second RTSP session while the playback opens
+    const retry = () => {
+      if (request !== this._request || this._t0 !== null) return false;
+      if (attempt >= 1) return false;
+      this._play(start, attempt + 1);
+      return true;
+    };
 
     let url;
     try {
       url = (await this._hass.callWS({ type: "ezviz_recordings/play", entry_id: camera.entry_id, start: toIso(start) })).url;
     } catch (err) {
-      if (request === this._request) this._setStatus(t.busy, false);
+      if (request === this._request && !retry()) this._setStatus(t.busy, false);
       return;
     }
     if (request !== this._request) return;
@@ -286,14 +286,17 @@ class EzvizRecordingsPanel extends HTMLElement {
       this._setStatus("", false);
     };
     video.addEventListener("playing", onPlaying, { once: true });
+    // buffering after the start (e.g. waiting for the next HLS segment): show the spinner only
+    video.onwaiting = () => { if (request === this._request && this._t0 !== null) this._setStatus("", true); };
+    video.onplaying = () => { if (request === this._request && this._t0 !== null) this._setStatus("", false); };
     const startPlayback = () => {
       if (request === this._request) video.play().catch(() => {});
     };
     // Home Assistant needs 10-15 s to publish the first HLS segment of an SD recording
     clearTimeout(this._watchdog);
     this._watchdog = setTimeout(() => {
-      if (request === this._request && this._t0 === null) this._setStatus(t.failed, false);
-    }, 45000);
+      if (request === this._request && this._t0 === null && !retry()) this._setStatus(t.failed, false);
+    }, 30000);
 
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = url;
@@ -315,7 +318,7 @@ class EzvizRecordingsPanel extends HTMLElement {
       this._hls.on(Hls.Events.ERROR, (_e, data) => {
         if (data.fatal && request === this._request) {
           console.warn("ezviz-recordings: playback error", data.type, data.details);
-          this._setStatus(`${t.failed} (${data.details})`, false);
+          if (!retry()) this._setStatus(`${t.failed} (${data.details})`, false);
         }
       });
       this._hls.attachMedia(video);
