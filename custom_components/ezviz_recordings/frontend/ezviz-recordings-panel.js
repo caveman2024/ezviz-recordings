@@ -11,14 +11,14 @@ const TEXT = {
     go: "Play", now: "Live minus 5 min", hourAgo: "1 h ago", opening: "Opening the recording… (5–10 s)",
     playing: "Recording", failed: "The camera did not return a recording for this moment.",
     busy: "The camera is busy or not answering. Try again in a few seconds.", sd: "SD",
-    when: "Moment",
+    when: "Moment", pick: "Choose the moment and press Play.",
   },
   it: {
     title: "Registrazioni", loading: "Caricamento…", noCameras: "Nessuna telecamera configurata. Aggiungila da Impostazioni → Dispositivi e servizi → EZVIZ Recordings.",
     go: "Guarda", now: "5 min fa", hourAgo: "1 ora fa", opening: "Apro la registrazione… (5–10 s)",
     playing: "Registrazione", failed: "La telecamera non ha registrazioni per questo momento.",
     busy: "La telecamera è occupata o non risponde. Riprova tra qualche secondo.", sd: "SD",
-    when: "Momento",
+    when: "Momento", pick: "Scegli il momento e premi Guarda.",
   },
 };
 
@@ -209,7 +209,16 @@ class EzvizRecordingsPanel extends HTMLElement {
       el.addEventListener("click", () => {
         this._camera = this._cameras.find((c) => c.entry_id === el.dataset.cam);
         this.shadowRoot.querySelectorAll("[data-cam]").forEach((b) => b.setAttribute("aria-pressed", String(b === el)));
-        this._play(this._position() || this._start);
+        // switching camera does not start a playback: the user picks the moment first
+        this._request++;
+        this._start = this._position() || this._start;
+        this._t0 = null;
+        this._teardown(true);
+        const input = this.shadowRoot.getElementById("when");
+        if (input) input.value = toIso(this._start);
+        const badge = this.shadowRoot.querySelector(".badge");
+        if (badge) badge.hidden = true;
+        this._setStatus(this._t.pick, false);
       }));
     this.shadowRoot.querySelector(".go")?.addEventListener("click", () => {
       const d = fromIso(this.shadowRoot.getElementById("when").value);
