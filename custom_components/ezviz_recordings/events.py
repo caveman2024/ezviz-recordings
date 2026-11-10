@@ -58,9 +58,11 @@ def _ezviz_client(hass: HomeAssistant) -> Any | None:
 class EventSource:
     """Detection events of one camera, per (camera-local) day."""
 
-    def __init__(self, hass: HomeAssistant, serial: str, encryption_key: str) -> None:
+    def __init__(self, hass: HomeAssistant, serial: str, encryption_key: str, people_only: bool = False) -> None:
         self.hass = hass
         self.serial = serial
+        # the camera is set to detect people only: every detection is a person, whatever its title
+        self.people_only = people_only
         self._key = encryption_key
         self._store: Store[dict[str, list[dict[str, Any]]]] = Store(
             hass, STORE_VERSION, f"{DOMAIN}.events.{serial}"
@@ -90,7 +92,7 @@ class EventSource:
             else:
                 self._fetched[key] = time.monotonic()
                 self._merge(key, messages)
-        return days.get(key, [])
+        return [self._apply(event) for event in days.get(key, [])]
 
     async def async_new_events(self, day: date) -> list[dict[str, Any]]:
         """Fetch the day from the cloud now and return the events not seen before.
@@ -141,7 +143,7 @@ class EventSource:
             known[event_id] = {
                 "id": event_id,
                 "time": str(msg["timeStr"]).replace(" ", "T"),
-                "kind": classify(msg),
+                "kind": self._kind(msg),
                 "title": msg.get("title") or "",
                 "sub_type": str(msg.get("subType") or ""),
             }
@@ -152,6 +154,17 @@ class EventSource:
         for old in [day for day in self._days if day < cutoff]:
             del self._days[old]
         self._store.async_delay_save(lambda: self._days or {}, 10)
+
+    def _apply(self, event: dict[str, Any]) -> dict[str, Any]:
+        if self.people_only and event["kind"] in ("motion", "other"):
+            return {**event, "kind": "person"}
+        return event
+
+    def _kind(self, message: dict[str, Any]) -> str:
+        kind = classify(message)
+        if self.people_only and kind in ("motion", "other"):
+            return "person"
+        return kind
 
     async def async_image(self, event_id: str) -> bytes | None:
         """Decrypted snapshot of an event (only while the cloud still has it)."""

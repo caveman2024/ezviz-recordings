@@ -60,7 +60,8 @@
         "description": "Gli eventi di rilevamento arrivano dall'integrazione EZVIZ (account cloud). L'entità allarme colora i periodi inseriti sulla linea del tempo.",
         "data": {
           "alarm_entity": "Allarme (mostra quando era inserito)",
-          "serial": "Numero di serie della telecamera (per leggere gli eventi dall'integrazione EZVIZ)"
+          "serial": "Numero di serie della telecamera (per leggere gli eventi dall'integrazione EZVIZ)",
+          "people_only": "La telecamera rileva solo persone (ogni rilevamento conta come persona)"
         }
       }
     }

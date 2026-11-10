@@ -24,7 +24,7 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
-from .const import CONF_ALARM_ENTITY, CONF_SERIAL, DEFAULT_RTSP_PORT, DEFAULT_USERNAME, DOMAIN
+from .const import CONF_ALARM_ENTITY, CONF_PEOPLE_ONLY, CONF_SERIAL, DEFAULT_RTSP_PORT, DEFAULT_USERNAME, DOMAIN
 
 EZVIZ_DOMAIN = "ezviz"
 PASSWORD_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
@@ -206,5 +206,6 @@ class EzvizRecordingsOptionsFlow(OptionsFlow):
                 description={"suggested_value": options.get(CONF_ALARM_ENTITY)},
             ): EntitySelector(EntitySelectorConfig(domain="alarm_control_panel")),
             vol.Optional(CONF_SERIAL, description={"suggested_value": serial}): str,
+            vol.Optional(CONF_PEOPLE_ONLY, default=options.get(CONF_PEOPLE_ONLY, False)): bool,
         }
         return self.async_show_form(step_id="init", data_schema=vol.Schema(schema))

@@ -60,7 +60,8 @@
         "description": "Detection events come from the EZVIZ integration (cloud account). The alarm entity colours the armed periods on the timeline.",
         "data": {
           "alarm_entity": "Alarm (shows when it was armed)",
-          "serial": "Camera serial (to read detection events from the EZVIZ integration)"
+          "serial": "Camera serial (to read detection events from the EZVIZ integration)",
+          "people_only": "The camera detects people only (every detection counts as a person)"
         }
       }
     }

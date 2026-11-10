@@ -15,6 +15,7 @@ from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     CONF_ALARM_ENTITY,
+    CONF_PEOPLE_ONLY,
     CONF_SERIAL,
     VERSION,
     DEFAULT_RTSP_PORT,
@@ -61,7 +62,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: RecordingsConfigEntry) -
     )
     serial = entry.options.get(CONF_SERIAL) or entry.data.get(CONF_SERIAL)
     if serial:
-        entry.runtime_data.events = EventSource(hass, serial, entry.data[CONF_PASSWORD])
+        entry.runtime_data.events = EventSource(
+            hass, serial, entry.data[CONF_PASSWORD], entry.options.get(CONF_PEOPLE_ONLY, False)
+        )
     await _async_register_panel(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     if DOMAIN not in hass.data:
