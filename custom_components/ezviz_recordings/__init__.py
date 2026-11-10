@@ -32,7 +32,7 @@ from .poller import DetectionPoller
 from .websocket_api import async_register_websocket_commands
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
-PLATFORMS = [Platform.EVENT]
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.EVENT]
 
 type RecordingsConfigEntry = ConfigEntry[RecordingCamera]
 

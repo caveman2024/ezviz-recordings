@@ -1,7 +1,7 @@
 """Background collection of detection events.
 
 The EZVIZ cloud keeps its message list only for a while, so events are fetched
-continuously (every 30 s while the alarm entity is armed, every 5 min otherwise) and kept
+continuously (every 10 s while the alarm entity is armed, every 5 min otherwise) and kept
 in the local store. Each new detection fires the Home Assistant event
 ``ezviz_recordings_detection`` and the camera's event entity, so automations can notify.
 """
@@ -23,7 +23,7 @@ from .const import DOMAIN, EVENT_DETECTION, PANEL_URL_PATH, SIGNAL_DETECTION
 
 _LOGGER = logging.getLogger(__name__)
 
-TICK = timedelta(seconds=30)
+TICK = timedelta(seconds=10)
 IDLE_INTERVAL = 300
 
 

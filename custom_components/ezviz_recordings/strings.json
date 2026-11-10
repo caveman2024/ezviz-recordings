@@ -79,6 +79,11 @@
           }
         }
       }
+    },
+    "binary_sensor": {
+      "person": {
+        "name": "Person detected"
+      }
     }
   }
 }

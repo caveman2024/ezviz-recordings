@@ -8,6 +8,7 @@ VERSION = "0.4.0"  # keep in sync with manifest.json
 CONF_SERIAL = "serial"
 EVENT_DETECTION = f"{DOMAIN}_detection"
 SIGNAL_DETECTION = f"{DOMAIN}_detection_signal"
+PERSON_HOLD = 60  # seconds the person sensor stays on
 CONF_ALARM_ENTITY = "alarm_entity"
 
 DEFAULT_USERNAME = "admin"
