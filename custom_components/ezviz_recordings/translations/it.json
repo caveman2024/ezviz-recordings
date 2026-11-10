@@ -84,6 +84,9 @@
     "binary_sensor": {
       "person": {
         "name": "Persona rilevata"
+      },
+      "reachable": {
+        "name": "Raggiungibile"
       }
     }
   }

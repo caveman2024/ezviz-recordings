@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 DOMAIN = "ezviz_recordings"
-VERSION = "0.4.0"  # keep in sync with manifest.json
+VERSION = "0.4.1"  # keep in sync with manifest.json
 
 CONF_SERIAL = "serial"
 EVENT_DETECTION = f"{DOMAIN}_detection"
@@ -29,3 +31,8 @@ MP4_TOKEN_TTL = 120  # seconds a playback URL stays valid
 THUMBNAIL_CACHE_SIZE = 120
 THUMBNAIL_TIMEOUT = 25
 THUMBNAIL_WIDTH = 640
+
+# Reachability check (TCP connect to the RTSP port).
+REACHABLE_INTERVAL = timedelta(seconds=60)
+REACHABLE_TIMEOUT = 5
+REACHABLE_FAILURES = 2

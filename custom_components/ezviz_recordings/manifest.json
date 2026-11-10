@@ -18,7 +18,7 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/caveman2024/ezviz-recordings/issues",
   "requirements": [],
-  "version": "0.4.0",
+  "version": "0.4.1",
   "after_dependencies": [
     "ezviz",
     "recorder"
