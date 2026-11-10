@@ -59,7 +59,8 @@ def ws_cameras(hass: HomeAssistant, connection: websocket_api.ActiveConnection, 
     {
         vol.Required("type"): f"{DOMAIN}/play",
         vol.Required("entry_id"): str,
-        vol.Required("start"): str,
+        vol.Optional("start"): str,
+        vol.Optional("live", default=False): bool,
         vol.Optional("format", default="hls"): vol.In(["hls", "mp4"]),
     }
 )
@@ -68,7 +69,12 @@ async def ws_play(hass: HomeAssistant, connection: websocket_api.ActiveConnectio
     """Start SD-card playback and return the HLS URL."""
     try:
         camera = _camera(hass, msg["entry_id"])
-        start = _local_time(msg["start"])
+        if msg["live"]:
+            token = camera.new_mp4_token(None)
+            url = f"/api/{DOMAIN}/mp4/{msg['entry_id']}/{token}"
+            connection.send_result(msg["id"], {"url": url, "format": "mp4"})
+            return
+        start = _local_time(msg.get("start", ""))
         if msg["format"] == "mp4":
             token = camera.new_mp4_token(start)
             url = f"/api/{DOMAIN}/mp4/{msg['entry_id']}/{token}"

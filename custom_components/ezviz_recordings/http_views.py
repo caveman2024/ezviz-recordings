@@ -31,8 +31,8 @@ class RecordingMp4View(HomeAssistantView):
         if entry is None or entry.domain != DOMAIN or not hasattr(entry, "runtime_data"):
             return web.Response(status=404)
         camera = entry.runtime_data
-        start = camera.start_for_token(token)
-        if start is None:
+        valid, start = camera.check_token(token)
+        if not valid:
             return web.Response(status=404)
         process = await camera.async_open_mp4(start)
         response = web.StreamResponse(headers={"Content-Type": "video/mp4", "Cache-Control": "no-store"})
@@ -40,6 +40,8 @@ class RecordingMp4View(HomeAssistantView):
             await response.prepare(request)
             assert process.stdout is not None
             while chunk := await process.stdout.read(CHUNK):
+                if request.transport is None or request.transport.is_closing():
+                    break  # the viewer went away: free the camera at once
                 await response.write(chunk)
         except ConnectionError:
             pass

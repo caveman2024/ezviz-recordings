@@ -18,6 +18,8 @@ const TEXT = {
     noEvents: "No events on this day.", noMore: "No more events in this direction on this day.",
     noSource: "Detection events are not available for this camera (set its serial in the integration options).",
     dragHint: "Drag the timeline, pinch or scroll to zoom, release to play.",
+    live: "Live", liveBadge: "LIVE", openingLive: "Opening the live view…", ended: "End of the recording.",
+    liveUnsupported: "This browser cannot show the live view here.",
   },
   it: {
     title: "Registrazioni", loading: "Caricamento…", noCameras: "Nessuna telecamera configurata. Aggiungila da Impostazioni → Dispositivi e servizi → EZVIZ Recordings.",
@@ -31,6 +33,8 @@ const TEXT = {
     noEvents: "Nessun evento in questo giorno.", noMore: "Nessun altro evento in questa direzione oggi.",
     noSource: "Gli eventi non sono disponibili per questa telecamera (imposta il numero di serie nelle opzioni dell'integrazione).",
     dragHint: "Trascina la linea del tempo, pizzica o usa la rotella per lo zoom, rilascia per guardare.",
+    live: "Diretta", liveBadge: "DIRETTA", openingLive: "Apro la diretta…", ended: "Fine della registrazione.",
+    liveUnsupported: "Questo browser non riesce a mostrare la diretta qui.",
   },
 };
 
@@ -56,6 +60,27 @@ function nowIn(timeZone) {
   return new Date(Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second));
 }
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+// codec string of a fragmented MP4 init segment (avcC + optional mp4a)
+function mp4Codecs(buf) {
+  let video = null;
+  let audio = false;
+  for (let i = 4; i < buf.length - 8; i++) {
+    if (!video && buf[i] === 0x61 && buf[i + 1] === 0x76 && buf[i + 2] === 0x63 && buf[i + 3] === 0x43) {
+      const h = (x) => x.toString(16).padStart(2, "0");
+      video = `avc1.${h(buf[i + 5])}${h(buf[i + 6])}${h(buf[i + 7])}`;
+    }
+    if (buf[i] === 0x6d && buf[i + 1] === 0x70 && buf[i + 2] === 0x34 && buf[i + 3] === 0x61) audio = true;
+  }
+  return video ? video + (audio ? ",mp4a.40.2" : "") : null;
+}
+function hasBox(buf, name) {
+  const c = [...name].map((ch) => ch.charCodeAt(0));
+  for (let i = 4; i < buf.length - 3; i++) {
+    if (buf[i] === c[0] && buf[i + 1] === c[1] && buf[i + 2] === c[2] && buf[i + 3] === c[3]) return true;
+  }
+  return false;
+}
 
 let hlsLoader;
 function loadHls() {
@@ -105,6 +130,7 @@ class EzvizRecordingsPanel extends HTMLElement {
     if (first) this._init();
     const menu = this.shadowRoot.querySelector("ha-menu-button");
     if (menu) { menu.hass = hass; menu.narrow = this._narrow; }
+    if (this._liveCard) this._liveCard.hass = hass;
   }
 
   set narrow(value) {
@@ -123,6 +149,7 @@ class EzvizRecordingsPanel extends HTMLElement {
 
   disconnectedCallback() {
     this._teardown(true);
+    this._removeLiveCard();
     this._resize?.disconnect();
   }
 
@@ -228,6 +255,13 @@ class EzvizRecordingsPanel extends HTMLElement {
         .badge { position:absolute; top:8px; left:8px; background:rgba(0,0,0,.6); color:#fff; border-radius:8px;
                  padding:4px 10px; font-size:15px; font-variant-numeric:tabular-nums; pointer-events:none; }
         .badge b { color:#ffb74d; margin-right:6px; }
+        .badge.live b { color:#ff5252; }
+        .golive { position:absolute; top:8px; right:8px; min-height:34px; padding:0 12px; border-radius:17px; border:none;
+                  background:rgba(0,0,0,.6); color:#fff; font-size:14px; cursor:pointer; display:flex; align-items:center; gap:6px; }
+        .golive::before { content:""; width:8px; height:8px; border-radius:50%; background:#ff5252; }
+        .golive.on { background:#d32f2f; }
+        .golive.on::before { background:#fff; }
+        .livecard { position:absolute; inset:0; display:block; }
         .status { position:absolute; inset:auto 0 0 0; padding:10px 12px; background:linear-gradient(transparent, rgba(0,0,0,.75));
                   color:#fff; font-size:14px; display:none; }
         .spinner { position:absolute; top:50%; left:50%; width:40px; height:40px; margin:-20px; border-radius:50%;
@@ -291,6 +325,7 @@ class EzvizRecordingsPanel extends HTMLElement {
               <img class="poster" alt="">
               <video playsinline muted autoplay></video>
               <div class="badge" hidden><b>${t.sd}</b><span class="pos"></span></div>
+              <button class="golive" title="${t.live}">${t.live}</button>
               <div class="spinner"></div>
               <div class="status"></div>
             </div>
@@ -350,6 +385,7 @@ class EzvizRecordingsPanel extends HTMLElement {
       if (dayKey(d) !== dayKey(this._day)) { this._day = startOfDay(d); this._loadDay(); }
       this._play(d);
     });
+    root.querySelector(".golive")?.addEventListener("click", () => this._play(null, 0, true));
     root.querySelectorAll("[data-jump]").forEach((el) =>
       el.addEventListener("click", () => {
         const base = this._position()?.getTime() ?? this._center;
@@ -617,7 +653,10 @@ class EzvizRecordingsPanel extends HTMLElement {
 
   _stopPlayback() {
     this._request++;
+    this._removeLiveCard();
     this._start = this._position() || this._start;
+    this._live = false;
+    this.shadowRoot.querySelector(".golive")?.classList.remove("on");
     this._t0 = null;
     this._teardown(true);
     const badge = this.shadowRoot.querySelector(".badge");
@@ -626,6 +665,7 @@ class EzvizRecordingsPanel extends HTMLElement {
   }
 
   _position() {
+    if (this._live && this._t0 !== null) return nowIn(this._tz);
     const video = this.shadowRoot.querySelector("video");
     if (!this._start || this._t0 === null || !video) return null;
     return new Date(this._start.getTime() + Math.max(0, video.currentTime - this._t0) * 1000);
@@ -644,50 +684,164 @@ class EzvizRecordingsPanel extends HTMLElement {
     clearTimeout(this._watchdog);
     this._tick = null;
     if (this._hls) { this._hls.destroy(); this._hls = null; }
+    if (this._abort) { this._abort.abort(); this._abort = null; }
     const video = this.shadowRoot.querySelector("video");
-    if (video) { video.removeAttribute("src"); video.load(); }
+    if (video) {
+      if (video.src.startsWith("blob:")) URL.revokeObjectURL(video.src);
+      video.removeAttribute("src");
+      video.load();
+    }
     if (stopRemote && this._playingEntry) {
       this._hass?.callWS({ type: "ezviz_recordings/stop", entry_id: this._playingEntry }).catch(() => {});
       this._playingEntry = null;
     }
   }
 
-  async _play(start, attempt = 0) {
+  // camera entity of the official EZVIZ integration matching this camera (by device / entity name)
+  _liveEntity(camera) {
+    const name = camera.name.toLowerCase();
+    const entities = Object.values(this._hass?.entities || {});
+    const match = entities.find((ent) => {
+      if (!ent.entity_id.startsWith("camera.") || (ent.platform && ent.platform !== "ezviz")) return false;
+      const device = this._hass.devices?.[ent.device_id];
+      const names = [device?.name_by_user, device?.name, this._hass.states[ent.entity_id]?.attributes?.friendly_name]
+        .filter(Boolean).map((n) => n.toLowerCase());
+      return names.some((n) => n.includes(name));
+    });
+    return match?.entity_id || null;
+  }
+
+  async _loadWebrtcCard() {
+    if (customElements.get("webrtc-camera")) return true;
+    try {
+      await import("/webrtc/webrtc-camera.js");
+      await Promise.race([customElements.whenDefined("webrtc-camera"), new Promise((r) => setTimeout(r, 3000))]);
+    } catch (err) {
+      return false;
+    }
+    return !!customElements.get("webrtc-camera");
+  }
+
+  _removeLiveCard() {
+    if (this._liveCard) { this._liveCard.remove(); this._liveCard = null; }
+    const video = this.shadowRoot.querySelector("video");
+    if (video) video.style.visibility = "";
+  }
+
+  async _showLiveCard(request) {
+    const entity = this._liveEntity(this._camera);
+    if (!entity || !(await this._loadWebrtcCard()) || request !== this._request) return false;
+    const card = document.createElement("webrtc-camera");
+    try {
+      card.setConfig({ entity, muted: true, ui: true });
+    } catch (err) {
+      return false;
+    }
+    card.hass = this._hass;
+    card.classList.add("livecard");
+    this.shadowRoot.querySelector(".player").insertBefore(card, this.shadowRoot.querySelector(".badge"));
+    this._liveCard = card;
+    this.shadowRoot.querySelector("video").style.visibility = "hidden";
+    this._t0 = 0;
+    this._setStatus("", false);
+    this._dbg("live: webrtc-camera", entity);
+    return true;
+  }
+
+  async _play(start, attempt = 0, live = false) {
     if (!this._camera) return;
+    this._removeLiveCard();
     const t = this._t;
     const request = ++this._request;
     const camera = this._camera;
     if (this._playingEntry && this._playingEntry !== camera.entry_id) this._teardown(true);
     else this._teardown(false);
-    this._start = start;
+    this._live = live;
+    this._start = live ? nowIn(this._tz) : start;
     this._t0 = null;
-    if (dayKey(start) !== dayKey(this._day)) {
+    if (!live && dayKey(start) !== dayKey(this._day)) {
       this._day = startOfDay(start);
+      this._loadDay();
+      this._renderDays();
+    } else if (live && dayKey(this._start) !== dayKey(this._day)) {
+      this._day = startOfDay(this._start);
       this._loadDay();
       this._renderDays();
     }
     if (this._span === DAY) this._span = 3600000;  // zoom in around the moment being watched
-    this._setCenter(start.getTime());
+    this._setCenter(this._start.getTime());
     const input = this.shadowRoot.getElementById("when");
-    if (input) input.value = toIso(start);
+    if (input && !live) input.value = toIso(start);
     const badge = this.shadowRoot.querySelector(".badge");
     const pos = this.shadowRoot.querySelector(".pos");
-    const poster = this.shadowRoot.querySelector(".poster");
     const video = this.shadowRoot.querySelector("video");
     badge.hidden = false;
-    pos.textContent = this._format(start);
-    this._setStatus(t.opening, true);
-    poster.style.display = "none";
+    badge.classList.toggle("live", live);
+    badge.querySelector("b").textContent = live ? t.liveBadge : t.sd;
+    pos.textContent = this._format(this._start);
+    this.shadowRoot.querySelector(".golive")?.classList.toggle("on", live);
+    this._setStatus(live ? t.openingLive : t.opening, true);
     video.controls = false; // the native controls show a second spinner while loading
 
-    // no thumbnail here: the camera rejects a second RTSP session while the playback opens
     const retry = () => {
       if (request !== this._request || this._t0 !== null) return false;
       if (attempt >= 1) return false;
-      this._play(start, attempt + 1);
+      this._play(start, attempt + 1, live);
       return true;
     };
+    const onPlaying = () => {
+      if (request !== this._request) return;
+      if (this._t0 === null) this._t0 = video.currentTime;
+      clearTimeout(this._watchdog);
+      video.controls = true;
+      this._setStatus("", false);
+    };
+    video.addEventListener("playing", onPlaying, { once: true });
+    // the native controls already show their own spinner while buffering
+    video.onwaiting = () => { if (request === this._request && this._t0 !== null && !video.controls) this._setStatus("", true); };
+    video.onplaying = () => { if (request === this._request && this._t0 !== null) this._setStatus("", false); };
+    clearTimeout(this._watchdog);
+    this._watchdog = setTimeout(() => {
+      if (request === this._request && this._t0 === null && !retry()) this._setStatus(t.failed, false);
+    }, 30000);
+    this._playingEntry = camera.entry_id;
+    this._tick = setInterval(() => {
+      const p = this._position();
+      if (p) {
+        pos.textContent = this._format(p);
+        if (!this._dragging) this._setCenter(p.getTime());
+      }
+    }, 500);
 
+    // live: the WebRTC card of the dashboards (instant), our MP4 stream as a fallback
+    if (live && (await this._showLiveCard(request))) {
+      clearTimeout(this._watchdog);
+      video.controls = false;
+      return;
+    }
+    if (request !== this._request) return;
+
+    // 1) low-latency path: fragmented MP4 streamed straight into Media Source Extensions
+    const MS = window.ManagedMediaSource || window.MediaSource;
+    if (MS) {
+      try {
+        const msg = { type: "ezviz_recordings/play", entry_id: camera.entry_id, format: "mp4" };
+        if (live) msg.live = true; else msg.start = toIso(start);
+        const { url } = await this._hass.callWS(msg);
+        if (request !== this._request) return;
+        this._dbg("player: mse", live ? "live" : "sd");
+        await this._streamMse(url, request, video, live, MS);
+        return;
+      } catch (err) {
+        if (request !== this._request) return;
+        this._dbg("mse failed:", err?.message || err);
+        if (this._t0 !== null) { this._setStatus(t.ended, false); return; }
+        if (this._abort) { this._abort.abort(); this._abort = null; }
+      }
+    }
+    if (live) { this._setStatus(t.liveUnsupported, false); return; }
+
+    // 2) fallback: Home Assistant HLS (slower start)
     let url;
     try {
       url = (await this._hass.callWS({ type: "ezviz_recordings/play", entry_id: camera.entry_id, start: toIso(start) })).url;
@@ -696,50 +850,9 @@ class EzvizRecordingsPanel extends HTMLElement {
       return;
     }
     if (request !== this._request) return;
-    this._playingEntry = camera.entry_id;
-
-    const onPlaying = () => {
-      if (request !== this._request) return;
-      if (this._t0 === null) this._t0 = video.currentTime;
-      clearTimeout(this._watchdog);
-      poster.style.display = "none";
-      video.controls = true;
-      this._setStatus("", false);
-    };
-    video.addEventListener("playing", onPlaying, { once: true });
-    if (this._debug) {
-      const ms = window.MediaSource || window.ManagedMediaSource;
-      this._dbg("url ok, native HLS:", video.canPlayType("application/vnd.apple.mpegurl") || "no",
-        "| MSE avc1.4d0029:", ms ? ms.isTypeSupported('video/mp4; codecs="avc1.4d0029,mp4a.40.2"') : "no MSE",
-        "| avc1.4d0032:", ms ? ms.isTypeSupported('video/mp4; codecs="avc1.4d0032"') : "-");
-      ["loadedmetadata", "loadeddata", "canplay", "playing", "waiting", "stalled", "pause", "ended", "error", "seeking", "seeked"]
-        .forEach((ev) => video.addEventListener(ev, () => {
-          if (request === this._request) this._dbg("video", ev, `t=${video.currentTime.toFixed(2)}`, `rs=${video.readyState}`,
-            `${video.videoWidth}x${video.videoHeight}`, video.error ? `err=${video.error.code} ${video.error.message}` : "");
-        }));
-      clearInterval(this._dbgTick);
-      this._dbgTick = setInterval(() => {
-        if (request !== this._request) return;
-        const b = video.buffered; const ranges = [];
-        for (let i = 0; i < b.length; i++) ranges.push(`${b.start(i).toFixed(1)}-${b.end(i).toFixed(1)}`);
-        const q = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality() : null;
-        this._dbg("tick", `t=${video.currentTime.toFixed(2)}`, `rs=${video.readyState}`, `paused=${video.paused}`,
-          `buf=[${ranges.join(",")}]`, q ? `frames=${q.totalVideoFrames} dropped=${q.droppedVideoFrames}` : "");
-      }, 2000);
-    }
-    // buffering after the start (e.g. waiting for the next HLS segment): show the spinner only
-    // the native controls already show their own spinner while buffering
-    video.onwaiting = () => { if (request === this._request && this._t0 !== null && !video.controls) this._setStatus("", true); };
-    video.onplaying = () => { if (request === this._request && this._t0 !== null) this._setStatus("", false); };
     const startPlayback = () => {
       if (request === this._request) video.play().catch(() => {});
     };
-    // Home Assistant needs 10-15 s to publish the first HLS segment of an SD recording
-    clearTimeout(this._watchdog);
-    this._watchdog = setTimeout(() => {
-      if (request === this._request && this._t0 === null && !retry()) this._setStatus(t.failed, false);
-    }, 30000);
-
     // Prefer hls.js (MSE) like the Home Assistant camera player: recent desktop Chrome claims native HLS
     // support but fails to parse Home Assistant's fMP4 playlists (DEMUXER_ERROR_COULD_NOT_PARSE).
     const Hls = await loadHls().catch(() => null);
@@ -750,11 +863,8 @@ class EzvizRecordingsPanel extends HTMLElement {
       video.addEventListener("loadedmetadata", startPlayback, { once: true });
     } else {
       this._dbg("player: hls.js", Hls.version);
-      // same loading timeouts the Home Assistant camera player uses
       this._hls = new Hls({
         lowLatencyMode: false,
-        // start at the first segment (the requested moment) instead of the live edge: no stall after
-        // the first seconds, and the footage starts exactly where the user asked
         startPosition: 0,
         backBufferLength: 60,
         manifestLoadingTimeOut: 30000,
@@ -764,14 +874,6 @@ class EzvizRecordingsPanel extends HTMLElement {
         levelLoadingMaxRetry: 3,
       });
       this._hls.on(Hls.Events.MANIFEST_PARSED, startPlayback);
-      if (this._debug) {
-        const E = Hls.Events;
-        this._hls.on(E.MANIFEST_PARSED, (_e, d) => this._dbg("hls manifest", d.levels.map((l) => `${l.codecSet || l.attrs?.CODECS} ${l.width}x${l.height}`).join(";")));
-        this._hls.on(E.LEVEL_LOADED, (_e, d) => this._dbg("hls level", `live=${d.details.live}`, `frags=${d.details.fragments.length}`, `target=${d.details.targetduration}`, `edge=${d.details.edge?.toFixed?.(1)}`));
-        this._hls.on(E.BUFFER_CODECS, (_e, d) => this._dbg("hls codecs", Object.entries(d).map(([k, v]) => `${k}:${v.codec || v.levelCodec}`).join(" ")));
-        this._hls.on(E.FRAG_BUFFERED, (_e, d) => this._dbg("hls frag", d.frag.sn, d.frag.type, `start=${d.frag.start.toFixed(1)}`));
-        this._hls.on(E.ERROR, (_e, d) => this._dbg("hls ERROR", `fatal=${d.fatal}`, d.type, d.details, d.reason || d.error?.message || ""));
-      }
       this._hls.on(Hls.Events.ERROR, (_e, data) => {
         if (data.fatal && request === this._request) {
           console.warn("ezviz-recordings: playback error", data.type, data.details);
@@ -781,13 +883,55 @@ class EzvizRecordingsPanel extends HTMLElement {
       this._hls.attachMedia(video);
       this._hls.loadSource(url);
     }
-    this._tick = setInterval(() => {
-      const p = this._position();
-      if (p) {
-        pos.textContent = this._format(p);
-        if (!this._dragging) this._setCenter(p.getTime());
+  }
+
+  async _streamMse(url, request, video, live, MS) {
+    const ms = new MS();
+    if (window.ManagedMediaSource && MS === window.ManagedMediaSource) video.disableRemotePlayback = true;
+    video.src = URL.createObjectURL(ms);
+    await new Promise((resolve) => ms.addEventListener("sourceopen", resolve, { once: true }));
+    this._abort = new AbortController();
+    const res = await fetch(url, { signal: this._abort.signal, cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const reader = res.body.getReader();
+    let sb = null;
+    let head = new Uint8Array(0);
+    const queue = [];
+    const pump = () => {
+      if (!sb || sb.updating || ms.readyState !== "open") return;
+      // keep at most ~90 s behind the playhead in memory
+      const b = sb.buffered;
+      if (b.length && video.currentTime - b.start(0) > 90) { sb.remove(b.start(0), video.currentTime - 30); return; }
+      if (queue.length) sb.appendBuffer(queue.shift());
+    };
+    while (request === this._request) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (!sb) {
+        const joined = new Uint8Array(head.length + value.length);
+        joined.set(head); joined.set(value, head.length);
+        head = joined;
+        const codecs = mp4Codecs(head);
+        if (!codecs || !hasBox(head, "moof")) continue;  // wait for the init segment and the first fragment
+        const type = `video/mp4; codecs="${codecs}"`;
+        if (!MS.isTypeSupported(type)) throw new Error(`unsupported ${codecs}`);
+        this._dbg("mse codecs", codecs);
+        sb = ms.addSourceBuffer(type);
+        sb.mode = "segments";
+        sb.addEventListener("updateend", pump);
+        queue.push(head);
+        pump();
+        continue;
       }
-    }, 500);
+      queue.push(value);
+      pump();
+      if (video.paused && video.buffered.length && this._t0 === null) video.play().catch(() => {});
+      if (live && video.buffered.length) {
+        const end = video.buffered.end(video.buffered.length - 1);
+        if (end - video.currentTime > 3) video.currentTime = end - 0.5;  // stay close to real time
+      }
+    }
+    if (request === this._request && this._t0 === null) throw new Error("stream ended before playback");
   }
 
   _format(d) {

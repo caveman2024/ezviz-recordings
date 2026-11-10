@@ -63,7 +63,7 @@ class RecordingCamera:
     _stream: Stream | None = field(default=None, init=False, repr=False)
     _thumb_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
     _thumbs: OrderedDict[str, bytes] = field(default_factory=OrderedDict, init=False, repr=False)
-    _mp4_tokens: dict[str, tuple[datetime, float]] = field(default_factory=dict, init=False, repr=False)
+    _mp4_tokens: dict[str, tuple[datetime | None, float]] = field(default_factory=dict, init=False, repr=False)
     _mp4_process: asyncio.subprocess.Process | None = field(default=None, init=False, repr=False)
 
     def _base_url(self) -> str:
@@ -120,44 +120,55 @@ class RecordingCamera:
     # as soon as the camera sends its first key frame. The session ends when the client
     # disconnects.
 
-    def new_mp4_token(self, start: datetime) -> str:
-        """Authorize one MP4 playback from start (the URL is the credential, like HLS)."""
+    def live_url(self) -> str:
+        """Return the RTSP URL of the live main stream."""
+        return f"{self._base_url()}/Streaming/Channels/101"
+
+    def new_mp4_token(self, start: datetime | None) -> str:
+        """Authorize one MP4 playback from start, or live when start is None.
+
+        The URL is the credential, like Home Assistant's HLS URLs."""
         now = time.monotonic()
         self._mp4_tokens = {k: v for k, v in self._mp4_tokens.items() if v[1] > now}
         token = secrets.token_urlsafe(24)
         self._mp4_tokens[token] = (start, now + MP4_TOKEN_TTL)
         return token
 
-    def start_for_token(self, token: str) -> datetime | None:
-        """Return the start time of a valid token."""
+    def check_token(self, token: str) -> tuple[bool, datetime | None]:
+        """Return (valid, start) for a token; start is None for live."""
         item = self._mp4_tokens.get(token)
         if item is None or item[1] < time.monotonic():
-            return None
-        return item[0]
+            return False, None
+        return True, item[0]
 
-    async def async_open_mp4(self, start: datetime) -> asyncio.subprocess.Process:
-        """Start ffmpeg remuxing the SD recording to fragmented MP4 on stdout."""
+    async def async_open_mp4(self, start: datetime | None) -> asyncio.subprocess.Process:
+        """Start ffmpeg remuxing the SD recording (or the live stream) to fragmented MP4."""
         if self._stream is not None:
             stream, self._stream = self._stream, None
             await stream.stop()
         await self._async_kill_mp4()
         async with self._thumb_lock:
-            url = self.playback_url(start, start + timedelta(hours=PLAYBACK_WINDOW_HOURS))
+            if start is None:
+                # live: video only. The live audio track carries timestamps that make ffmpeg drop
+                # the video; the picture starts at the next key frame (GOP ~4 s).
+                source = ["-i", self.live_url(), "-map", "0:v:0"]
+            else:
+                url = self.playback_url(start, start + timedelta(hours=PLAYBACK_WINDOW_HOURS))
+                # no "-fflags nobuffer": it drops the packets read while probing, and the first
+                # key frame of the playback is among them (the next one is a GOP, ~4 s, later)
+                source = ["-fflags", "+genpts", "-i", url, "-map", "0:v:0", "-map", "0:a:0?"]
             process = await asyncio.create_subprocess_exec(
                 get_ffmpeg_manager(self.hass).binary, "-hide_banner", "-loglevel", "error",
                 "-rtsp_transport", "tcp", "-timeout", "8000000",
-                "-probesize", "32768", "-analyzeduration", "200000", "-fflags", "nobuffer",
-                "-i", url, "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy",
-                # the first frame of an SD playback is a key frame that ffmpeg does not flag as
-                # such: without -copyinkf it is dropped and the picture waits for the next GOP (~4 s)
-                "-copyinkf", "-max_interleave_delta", "0",
+                "-probesize", "32768", "-analyzeduration", "200000",
+                *source, "-c", "copy", "-max_interleave_delta", "0",
                 "-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof",
                 "-frag_duration", "500000", "-flush_packets", "1", "pipe:1",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
         self._mp4_process = process
-        _LOGGER.debug("%s: mp4 playback from %s", self.name, camera_time(start))
+        _LOGGER.debug("%s: mp4 %s", self.name, "live" if start is None else camera_time(start))
         return process
 
     async def async_close_mp4(self, process: asyncio.subprocess.Process) -> None:
