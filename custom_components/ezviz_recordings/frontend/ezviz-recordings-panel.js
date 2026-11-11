@@ -18,7 +18,7 @@ const TEXT = {
     noEvents: "No events on this day.", noMore: "No more events in this direction on this day.",
     noSource: "Detection events are not available for this camera (set its serial in the integration options).",
     dragHint: "Drag the timeline, pinch or scroll to zoom, release to play.",
-    live: "Live", liveBadge: "LIVE", openingLive: "Opening the live view…", ended: "End of the recording.",
+    live: "Live", liveBadge: "LIVE", soundOn: "Sound on", soundOff: "Sound off", openingLive: "Opening the live view…", ended: "End of the recording.",
     liveUnsupported: "This browser cannot show the live view here.",
   },
   it: {
@@ -33,7 +33,7 @@ const TEXT = {
     noEvents: "Nessun evento in questo giorno.", noMore: "Nessun altro evento in questa direzione oggi.",
     noSource: "Gli eventi non sono disponibili per questa telecamera (imposta il numero di serie nelle opzioni dell'integrazione).",
     dragHint: "Trascina la linea del tempo, pizzica o usa la rotella per lo zoom, rilascia per guardare.",
-    live: "Diretta", liveBadge: "DIRETTA", openingLive: "Apro la diretta…", ended: "Fine della registrazione.",
+    live: "Diretta", liveBadge: "DIRETTA", soundOn: "Audio attivo", soundOff: "Audio spento", openingLive: "Apro la diretta…", ended: "Fine della registrazione.",
     liveUnsupported: "Questo browser non riesce a mostrare la diretta qui.",
   },
 };
@@ -113,6 +113,8 @@ class EzvizRecordingsPanel extends HTMLElement {
     this._t0 = null;         // video.currentTime when playback really started
     this._hls = null;
     this._request = 0;
+    // sound preference of this browser; the video always starts muted (browsers block audible autoplay)
+    try { this._soundOn = localStorage.getItem("ezviz-recordings.sound") === "1"; } catch (err) { this._soundOn = false; }
     this._tick = null;
     this._day = null;        // naive Date at 00:00 of the shown day
     this._center = null;     // naive ms at the timeline playhead
@@ -261,6 +263,8 @@ class EzvizRecordingsPanel extends HTMLElement {
         .golive::before { content:""; width:8px; height:8px; border-radius:50%; background:#ff5252; }
         .golive.on { background:#d32f2f; }
         .golive.on::before { background:#fff; }
+        .sound { position:absolute; right:8px; bottom:8px; width:40px; height:40px; border-radius:20px; border:none; z-index:3;
+                 background:rgba(0,0,0,.6); color:#fff; font-size:18px; line-height:40px; padding:0; cursor:pointer; }
         .livecard { position:absolute; inset:0; display:block; }
         .status { position:absolute; inset:auto 0 0 0; padding:10px 12px; background:linear-gradient(transparent, rgba(0,0,0,.75));
                   color:#fff; font-size:14px; display:none; }
@@ -326,6 +330,7 @@ class EzvizRecordingsPanel extends HTMLElement {
               <video playsinline muted autoplay></video>
               <div class="badge" hidden><b>${t.sd}</b><span class="pos"></span></div>
               <button class="golive" title="${t.live}">${t.live}</button>
+              <button class="sound" aria-pressed="false"></button>
               <div class="spinner"></div>
               <div class="status"></div>
             </div>
@@ -386,6 +391,14 @@ class EzvizRecordingsPanel extends HTMLElement {
       this._play(d);
     });
     root.querySelector(".golive")?.addEventListener("click", () => this._play(null, 0, true));
+    root.querySelector(".sound")?.addEventListener("click", () => {
+      this._soundOn = !this._soundOn;
+      try { localStorage.setItem("ezviz-recordings.sound", this._soundOn ? "1" : "0"); } catch (err) { /* private mode */ }
+      this._applySound();
+      const video = this.shadowRoot.querySelector("video");
+      if (video && video.paused && video.buffered.length) this._playVideo(video);   // a click is a user gesture
+    });
+    this._applySound();
     root.querySelectorAll("[data-jump]").forEach((el) =>
       el.addEventListener("click", () => {
         const base = this._position()?.getTime() ?? this._center;
@@ -664,6 +677,30 @@ class EzvizRecordingsPanel extends HTMLElement {
     this._setStatus(this._t.pick, false);
   }
 
+  // sound button and <video> follow this._soundOn
+  _applySound() {
+    const video = this.shadowRoot.querySelector("video");
+    if (video) video.muted = !this._soundOn;
+    const button = this.shadowRoot.querySelector(".sound");
+    if (button) {
+      button.textContent = this._soundOn ? "🔊" : "🔇";
+      button.title = this._soundOn ? this._t.soundOn : this._t.soundOff;
+      button.setAttribute("aria-pressed", String(this._soundOn));
+    }
+  }
+
+  // play with sound if wanted; if the browser refuses audible autoplay, go on muted and show it
+  _playVideo(video) {
+    this._applySound();
+    video.play().catch(() => {
+      if (video.muted) return;
+      video.muted = true;
+      const button = this.shadowRoot.querySelector(".sound");
+      if (button) { button.textContent = "🔇"; button.setAttribute("aria-pressed", "false"); }
+      video.play().catch(() => {});
+    });
+  }
+
   _position() {
     if (this._live && this._t0 !== null) return nowIn(this._tz);
     const video = this.shadowRoot.querySelector("video");
@@ -733,7 +770,7 @@ class EzvizRecordingsPanel extends HTMLElement {
     if (!entity || !(await this._loadWebrtcCard()) || request !== this._request) return false;
     const card = document.createElement("webrtc-camera");
     try {
-      card.setConfig({ entity, muted: true, ui: true });
+      card.setConfig({ entity, muted: !this._soundOn, ui: true });
     } catch (err) {
       return false;
     }
@@ -851,7 +888,7 @@ class EzvizRecordingsPanel extends HTMLElement {
     }
     if (request !== this._request) return;
     const startPlayback = () => {
-      if (request === this._request) video.play().catch(() => {});
+      if (request === this._request) this._playVideo(video);
     };
     // Prefer hls.js (MSE) like the Home Assistant camera player: recent desktop Chrome claims native HLS
     // support but fails to parse Home Assistant's fMP4 playlists (DEMUXER_ERROR_COULD_NOT_PARSE).
@@ -925,7 +962,7 @@ class EzvizRecordingsPanel extends HTMLElement {
       }
       queue.push(value);
       pump();
-      if (video.paused && video.buffered.length && this._t0 === null) video.play().catch(() => {});
+      if (video.paused && video.buffered.length && this._t0 === null) this._playVideo(video);
       if (live && video.buffered.length) {
         const end = video.buffered.end(video.buffered.length - 1);
         if (end - video.currentTime > 3) video.currentTime = end - 0.5;  // stay close to real time
