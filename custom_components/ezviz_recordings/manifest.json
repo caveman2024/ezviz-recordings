@@ -1,6 +1,10 @@
 {
   "domain": "ezviz_recordings",
   "name": "EZVIZ Recordings",
+  "after_dependencies": [
+    "ezviz",
+    "recorder"
+  ],
   "codeowners": [
     "@caveman2024"
   ],
@@ -18,9 +22,5 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/caveman2024/ezviz-recordings/issues",
   "requirements": [],
-  "version": "0.4.3",
-  "after_dependencies": [
-    "ezviz",
-    "recorder"
-  ]
+  "version": "0.4.3"
 }

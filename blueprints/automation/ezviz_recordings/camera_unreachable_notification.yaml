@@ -1,0 +1,75 @@
+blueprint:
+  name: EZVIZ Recordings - camera unreachable on the local network
+  description: >-
+    Notifies a phone when an EZVIZ camera stops answering on the local network for some minutes
+    (power cut, Wi-Fi problem, frozen camera), and again when it is back. It uses the "Reachable"
+    sensor of EZVIZ Recordings, which checks the camera locally and works without internet.
+  domain: automation
+  source_url: https://github.com/caveman2024/ezviz-recordings/blob/main/blueprints/automation/ezviz_recordings/camera_unreachable_notification.yaml
+  input:
+    reachable_sensors:
+      name: Reachable sensors
+      description: The "Reachable" sensors of the cameras to watch.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            integration: ezviz_recordings
+            domain: binary_sensor
+            device_class: connectivity
+    minutes:
+      name: Minutes before notifying
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: min
+    notify_device:
+      name: Phone
+      description: Device of the Home Assistant companion app that receives the notification.
+      selector:
+        device:
+          filter:
+            integration: mobile_app
+
+mode: queued
+max: 4
+
+trigger_variables:
+  minutes: !input minutes
+
+triggers:
+  - trigger: state
+    entity_id: !input reachable_sensors
+    to: "off"
+    for:
+      minutes: !input minutes
+    id: down
+  - trigger: state
+    entity_id: !input reachable_sensors
+    from: "off"
+    to: "on"
+    id: up
+
+conditions:
+  # "back online" only after a real outage, not after a short glitch
+  - condition: template
+    value_template: >-
+      {{ trigger.id == 'down'
+         or (trigger.to_state.last_changed - trigger.from_state.last_changed).total_seconds() >= minutes * 60 }}
+
+actions:
+  - device_id: !input notify_device
+    domain: mobile_app
+    type: notify
+    title: >-
+      {{ trigger.to_state.name }}: {{ 'unreachable' if trigger.id == 'down' else 'back online' }}
+    message: >-
+      {% if trigger.id == 'down' %}Not answering on the local network since
+      {{ as_local(trigger.from_state.last_changed).strftime('%H:%M') }}.{% else %}Back after
+      {{ ((trigger.to_state.last_changed - trigger.from_state.last_changed).total_seconds() / 60) | round(0) | int }}
+      minutes.{% endif %}
+    data:
+      tag: "ezviz-recordings-reachable-{{ trigger.entity_id }}"
+      channel: Cameras

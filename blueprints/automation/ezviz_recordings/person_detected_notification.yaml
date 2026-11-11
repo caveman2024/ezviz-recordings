@@ -1,0 +1,78 @@
+blueprint:
+  name: EZVIZ Recordings - notify on person detection
+  description: >-
+    Sends a notification to a phone with the Home Assistant app when an EZVIZ camera detects a
+    person (or any motion, if you prefer). The notification shows the event snapshot and opens the
+    EZVIZ Recordings panel ten seconds before the detection, so you can replay what happened.
+
+    "Only while armed" uses the alarm entity set in the integration options of each camera.
+  domain: automation
+  source_url: https://github.com/caveman2024/ezviz-recordings/blob/main/blueprints/automation/ezviz_recordings/person_detected_notification.yaml
+  input:
+    notify_device:
+      name: Phone
+      description: Device of the Home Assistant companion app that receives the notification.
+      selector:
+        device:
+          filter:
+            integration: mobile_app
+    kinds:
+      name: Detections
+      description: Which detections send a notification.
+      default: person
+      selector:
+        select:
+          options:
+            - label: People only
+              value: person
+            - label: People and motion
+              value: any
+    only_when_armed:
+      name: Only while armed
+      description: Notify only if the camera's alarm entity was armed at the time of the detection.
+      default: true
+      selector:
+        boolean:
+    cameras:
+      name: Cameras
+      description: Camera names as shown in the panel, one per line. Leave empty for all cameras.
+      default: []
+      selector:
+        text:
+          multiple: true
+
+mode: queued
+max: 5
+
+trigger_variables:
+  kinds: !input kinds
+  only_when_armed: !input only_when_armed
+  cameras: !input cameras
+
+triggers:
+  - trigger: event
+    event_type: ezviz_recordings_detection
+
+conditions:
+  - condition: template
+    value_template: >-
+      {{ (trigger.event.data.kind == 'person' or (kinds == 'any' and trigger.event.data.kind == 'motion'))
+         and (not only_when_armed or trigger.event.data.armed)
+         and (cameras | length == 0 or trigger.event.data.camera in cameras) }}
+
+actions:
+  - device_id: !input notify_device
+    domain: mobile_app
+    type: notify
+    title: "{{ 'Person' if trigger.event.data.kind == 'person' else 'Motion' }} - {{ trigger.event.data.camera }}"
+    message: "Detected at {{ trigger.event.data.time[11:19] }}. Tap to replay the recording."
+    data:
+      image: "{{ trigger.event.data.image }}"
+      clickAction: "{{ trigger.event.data.link }}"
+      url: "{{ trigger.event.data.link }}"
+      tag: "ezviz-recordings-{{ trigger.event.data.entry_id }}"
+      channel: Cameras
+      actions:
+        - action: URI
+          title: Replay
+          uri: "{{ trigger.event.data.link }}"
