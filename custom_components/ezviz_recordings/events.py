@@ -29,15 +29,16 @@ TODAY_REFRESH = 60  # seconds between cloud refreshes of today's list
 MAX_PAGES = 20
 IMAGE_CACHE = 60
 
-PERSON_WORDS = ("human", "person", "people", "body", "persona", "umana", "uman")
+# "Smart Detection Alarm" is the human-shape detection of the C3TN family (the cloud reports it with the
+# same subType 2401 as "Offline Alarm", so the subType says nothing about the kind).
+PERSON_WORDS = ("human", "person", "people", "body", "persona", "umana", "uman", "smart detection")
 MOTION_WORDS = ("motion", "movimento", "pir", "intrusion", "line crossing", "region", "detection")
-OFFLINE_SUBTYPES = {"2401"}
 
 
 def classify(message: dict[str, Any]) -> str:
     """Map an EZVIZ message to person / motion / offline / other."""
     title = str(message.get("title") or "").lower()
-    if str(message.get("subType")) in OFFLINE_SUBTYPES or "offline" in title:
+    if "offline" in title:
         return "offline"
     if any(word in title for word in PERSON_WORDS):
         return "person"
@@ -156,9 +157,8 @@ class EventSource:
         self._store.async_delay_save(lambda: self._days or {}, 10)
 
     def _apply(self, event: dict[str, Any]) -> dict[str, Any]:
-        if self.people_only and event["kind"] in ("motion", "other"):
-            return {**event, "kind": "person"}
-        return event
+        # the kind is recomputed from the stored title, so a classifier fix also corrects older days
+        return {**event, "kind": self._kind({"title": event.get("title") or ""})}
 
     def _kind(self, message: dict[str, Any]) -> str:
         kind = classify(message)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 DOMAIN = "ezviz_recordings"
-VERSION = "0.4.1"  # keep in sync with manifest.json
+VERSION = "0.4.2"  # keep in sync with manifest.json
 
 CONF_SERIAL = "serial"
 EVENT_DETECTION = f"{DOMAIN}_detection"
