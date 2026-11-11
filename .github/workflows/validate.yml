@@ -23,5 +23,3 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # the repository is new: no topics, brands or releases are required to install it as a custom repository
-          ignore: brands topics
