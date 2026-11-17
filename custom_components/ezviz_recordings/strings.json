@@ -4,7 +4,7 @@
       "user": {
         "title": "Add a camera",
         "menu_options": {
-          "pick_ezviz": "Use a camera from the EZVIZ integration",
+          "pick_ezviz": "Start from a camera of the EZVIZ integration",
           "manual": "Enter address and verification code"
         }
       },
@@ -16,11 +16,13 @@
       },
       "confirm": {
         "title": "Confirm camera {serial}",
-        "description": "The user name and verification code are copied from the EZVIZ integration. Check the local IP address of the camera.",
+        "description": "Name and local IP address come from the EZVIZ integration. Enter the verification code of the camera: the 6-letter code on its label, or the one you set in the EZVIZ app.",
         "data": {
           "name": "Name",
           "host": "Local IP address",
-          "port": "RTSP port"
+          "port": "RTSP port",
+          "username": "User name",
+          "password": "Verification code"
         }
       },
       "manual": {
@@ -57,13 +59,29 @@
     "step": {
       "init": {
         "title": "Options",
-        "description": "Detection events come from the EZVIZ integration (cloud account). The alarm entity colours the armed periods on the timeline.",
+        "description": "Detection events and their snapshots are read from the EZVIZ cloud with your EZVIZ account (the same one you use in the EZVIZ app). Leave the account empty to use only the SD card. The alarm entity colours the armed periods on the timeline.",
         "data": {
           "alarm_entity": "Alarm (shows when it was armed)",
-          "serial": "Camera serial (to read detection events from the EZVIZ integration)",
-          "people_only": "The camera detects people only (every detection counts as a person)"
+          "serial": "Camera serial (to read its detection events)",
+          "people_only": "The camera detects people only (every detection counts as a person)",
+          "cloud_username": "EZVIZ account (e-mail or phone)",
+          "cloud_password": "EZVIZ account password (leave empty to keep the saved one)",
+          "cloud_url": "EZVIZ cloud region"
+        }
+      },
+      "cloud_code": {
+        "title": "EZVIZ verification code",
+        "description": "EZVIZ sent a verification code to the phone or e-mail of the account. Enter it here; it is asked only once.",
+        "data": {
+          "sms_code": "Verification code"
         }
       }
+    },
+    "error": {
+      "invalid_auth": "Wrong EZVIZ account or password.",
+      "cloud_unreachable": "The EZVIZ cloud did not answer. Check the region and try again.",
+      "invalid_code": "Wrong or expired verification code.",
+      "password_required": "Enter the password of the EZVIZ account."
     }
   },
   "entity": {

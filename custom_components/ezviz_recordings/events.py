@@ -1,7 +1,7 @@
 """Detection events (EZVIZ cloud message list) and alarm-armed periods (Home Assistant history).
 
-Events come from the same list the EZVIZ app shows. We reuse the cloud session of the
-official EZVIZ integration (no second login) and keep a small local copy -- time, type and
+Events come from the same list the EZVIZ app shows, read with our own cloud session (the EZVIZ
+account entered in the options, see cloud.py). We keep a small local copy -- time, type and
 title only -- so the timeline still shows events after the cloud forgets them.
 """
 
@@ -18,11 +18,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from .cloud import CloudAccount
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-EZVIZ_DOMAIN = "ezviz"
 STORE_VERSION = 1
 KEEP_DAYS = 60
 TODAY_REFRESH = 60  # seconds between cloud refreshes of today's list
@@ -47,20 +47,14 @@ def classify(message: dict[str, Any]) -> str:
     return "other"
 
 
-def _ezviz_client(hass: HomeAssistant) -> Any | None:
-    """The cloud client of the official EZVIZ integration, if loaded."""
-    for entry in hass.config_entries.async_loaded_entries(EZVIZ_DOMAIN):
-        client = getattr(getattr(entry, "runtime_data", None), "ezviz_client", None)
-        if client is not None:
-            return client
-    return None
-
-
 class EventSource:
     """Detection events of one camera, per (camera-local) day."""
 
-    def __init__(self, hass: HomeAssistant, serial: str, encryption_key: str, people_only: bool = False) -> None:
+    def __init__(
+        self, hass: HomeAssistant, serial: str, encryption_key: str, cloud: CloudAccount | None, people_only: bool = False
+    ) -> None:
         self.hass = hass
+        self._cloud = cloud
         self.serial = serial
         # the camera is set to detect people only: every detection is a person, whatever its title
         self.people_only = people_only
@@ -85,9 +79,9 @@ class EventSource:
         today = dt_util.now().date()
         fresh = self._fetched.get(key)
         need = fresh is None if day < today else fresh is None or time.monotonic() - fresh > TODAY_REFRESH
-        if need and day <= today and (client := _ezviz_client(self.hass)) is not None:
+        if need and day <= today and self._cloud is not None:
             try:
-                messages = await self.hass.async_add_executor_job(self._fetch_day, client, day)
+                messages = await self._cloud.async_call(lambda client: self._fetch_day(client, day))
             except Exception as err:  # noqa: BLE001 - cloud errors must not break the panel
                 _LOGGER.debug("%s: cannot read events of %s: %s", self.serial, key, err)
             else:
@@ -103,13 +97,12 @@ class EventSource:
         """
         days = await self._async_load()
         key = day.isoformat()
-        client = _ezviz_client(self.hass)
-        if client is None:
+        if self._cloud is None:
             return []
         had = key in days
         known = {event["id"] for event in days.get(key, [])}
         try:
-            messages = await self.hass.async_add_executor_job(self._fetch_day, client, day)
+            messages = await self._cloud.async_call(lambda client: self._fetch_day(client, day))
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("%s: cannot read events of %s: %s", self.serial, key, err)
             return []
@@ -171,12 +164,11 @@ class EventSource:
         if (cached := self._images.get(event_id)) is not None:
             return cached
         url = self._pics.get(event_id)
-        client = _ezviz_client(self.hass)
-        if not url or client is None:
+        if not url or self._cloud is None:
             return None
         try:
-            image = await self.hass.async_add_executor_job(
-                lambda: client.download_alarm_image(url, self.serial, encryption_key=self._key)
+            image = await self._cloud.async_call(
+                lambda client: client.download_alarm_image(url, self.serial, encryption_key=self._key)
             )
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("%s: cannot download image %s: %s", self.serial, event_id, err)

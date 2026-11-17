@@ -4,7 +4,7 @@
       "user": {
         "title": "Aggiungi una telecamera",
         "menu_options": {
-          "pick_ezviz": "Usa una telecamera dell'integrazione EZVIZ",
+          "pick_ezviz": "Parti da una telecamera dell'integrazione EZVIZ",
           "manual": "Inserisci indirizzo e codice di verifica"
         }
       },
@@ -16,11 +16,13 @@
       },
       "confirm": {
         "title": "Conferma la telecamera {serial}",
-        "description": "Nome utente e codice di verifica vengono copiati dall'integrazione EZVIZ. Controlla l'indirizzo IP locale della telecamera.",
+        "description": "Nome e indirizzo IP locale vengono dall'integrazione EZVIZ. Inserisci il codice di verifica della telecamera: il codice di 6 lettere sull'etichetta, o quello impostato nell'app EZVIZ.",
         "data": {
           "name": "Nome",
           "host": "Indirizzo IP locale",
-          "port": "Porta RTSP"
+          "port": "Porta RTSP",
+          "username": "Nome utente",
+          "password": "Codice di verifica"
         }
       },
       "manual": {
@@ -57,13 +59,29 @@
     "step": {
       "init": {
         "title": "Opzioni",
-        "description": "Gli eventi di rilevamento arrivano dall'integrazione EZVIZ (account cloud). L'entità allarme colora i periodi inseriti sulla linea del tempo.",
+        "description": "Gli eventi di rilevamento e le loro foto si leggono dal cloud EZVIZ con il tuo account EZVIZ (lo stesso dell'app EZVIZ). Lascia vuoto l'account per usare solo la scheda SD. L'entità allarme colora i periodi inseriti sulla linea del tempo.",
         "data": {
           "alarm_entity": "Allarme (mostra quando era inserito)",
-          "serial": "Numero di serie della telecamera (per leggere gli eventi dall'integrazione EZVIZ)",
-          "people_only": "La telecamera rileva solo persone (ogni rilevamento conta come persona)"
+          "serial": "Numero di serie della telecamera (per leggerne gli eventi)",
+          "people_only": "La telecamera rileva solo persone (ogni rilevamento conta come persona)",
+          "cloud_username": "Account EZVIZ (e-mail o telefono)",
+          "cloud_password": "Password dell'account EZVIZ (vuota per tenere quella salvata)",
+          "cloud_url": "Regione del cloud EZVIZ"
+        }
+      },
+      "cloud_code": {
+        "title": "Codice di verifica EZVIZ",
+        "description": "EZVIZ ha mandato un codice di verifica al telefono o all'e-mail dell'account. Inseriscilo qui: viene chiesto una volta sola.",
+        "data": {
+          "sms_code": "Codice di verifica"
         }
       }
+    },
+    "error": {
+      "invalid_auth": "Account EZVIZ o password sbagliati.",
+      "cloud_unreachable": "Il cloud EZVIZ non risponde. Controlla la regione e riprova.",
+      "invalid_code": "Codice di verifica sbagliato o scaduto.",
+      "password_required": "Inserisci la password dell'account EZVIZ."
     }
   },
   "entity": {

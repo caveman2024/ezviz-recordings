@@ -2,7 +2,6 @@
   "domain": "ezviz_recordings",
   "name": "EZVIZ Recordings",
   "after_dependencies": [
-    "ezviz",
     "recorder"
   ],
   "codeowners": [
@@ -21,6 +20,8 @@
   "integration_type": "device",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/caveman2024/ezviz-recordings/issues",
-  "requirements": [],
-  "version": "0.4.3"
+  "requirements": [
+    "pyezvizapi>=1.0.5.0"
+  ],
+  "version": "0.5.0"
 }

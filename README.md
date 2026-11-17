@@ -23,9 +23,11 @@ a local reachability check.
 - Home Assistant 2025.11 or newer.
 - An EZVIZ camera with an SD card, reachable on the local network, with its **verification code**
   (the six-letter code on the label, or the one set in the EZVIZ app).
-- Optional, recommended: the official **EZVIZ** integration (EZVIZ cloud account). Detection events and
-  their snapshots come from the cloud message list it already reads; without it the panel still plays
-  the SD card, but the timeline has no events.
+- Optional, recommended: your **EZVIZ account** (the one of the EZVIZ app), entered in the options.
+  Detection events and their snapshots come from the EZVIZ cloud message list; without the account the
+  panel still plays the SD card, but the timeline has no events.
+- Optional: the official **EZVIZ** integration. If it is installed, the setup offers its cameras so that
+  name, serial number and local IP address are pre-filled. Nothing else is shared with it.
 - Optional: the [WebRTC Camera](https://github.com/AlexxIT/WebRTC) integration and card, for an instant
   live view. Without it the panel uses its own live view, a few seconds behind and without sound.
 
@@ -40,8 +42,8 @@ as an **Integration**, install **EZVIZ Recordings** and restart Home Assistant.
 
 *Settings → Devices & services → Add integration → EZVIZ Recordings*, once per camera:
 
-- **Use a camera of the EZVIZ integration**: username, verification code and serial number are taken
-  from the official integration; check the local IP address.
+- **Start from a camera of the EZVIZ integration**: name, serial number and local IP address are taken
+  from the device registry; you enter the verification code.
 - **Enter address and verification code**: for cameras that are not in the EZVIZ integration.
 
 The connection is tested before the camera is added. Address and code can be changed later with
@@ -52,8 +54,9 @@ The connection is tested before the camera is added. Address and code can be cha
 | Option | What it does |
 |---|---|
 | Alarm | An `alarm_control_panel` entity: its armed periods are drawn on the timeline, and detections carry `armed: true` while it is armed. |
-| Serial number | Needed to read the detection events through the EZVIZ integration. |
+| Serial number | Needed to read the detection events of this camera. |
 | The camera detects people only | Turn it on if the camera is set to human detection only: every detection then counts as a person. |
+| EZVIZ account, password, region | Your EZVIZ cloud login, used to read the detection events and their snapshots. Enter it in one camera and leave the password empty in the others: cameras with the same account share one session. If EZVIZ asks for a verification code (SMS or e-mail), it is asked once here. Leave the account empty to use the SD card only. |
 
 ## What you get
 
@@ -123,7 +126,8 @@ clear text in the dashboard configuration.
 ## Privacy
 
 Recordings travel only between the camera and Home Assistant on your network, and are never stored. The
-cloud is used only for what the official EZVIZ integration already does (event list and snapshots). If
+EZVIZ cloud is used only for the event list and the snapshots, with the account you enter in the options;
+the session token is stored locally in Home Assistant. If
 video encryption is on in the EZVIZ app, snapshots are decrypted locally with the verification code.
 
 ## License

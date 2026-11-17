@@ -13,13 +13,18 @@ from homeassistant.core import HomeAssistant
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
+from .cloud import account_key, async_get_account, async_release_unused
 from .const import (
     CONF_ALARM_ENTITY,
+    CONF_CLOUD_PASSWORD,
+    CONF_CLOUD_URL,
+    CONF_CLOUD_USERNAME,
     CONF_PEOPLE_ONLY,
     CONF_SERIAL,
     VERSION,
     DEFAULT_RTSP_PORT,
     DOMAIN,
+    EU_URL,
     PANEL_COMPONENT,
     PANEL_ICON,
     PANEL_URL_PATH,
@@ -61,9 +66,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: RecordingsConfigEntry) -
         alarm_entity=entry.options.get(CONF_ALARM_ENTITY) or None,
     )
     serial = entry.options.get(CONF_SERIAL) or entry.data.get(CONF_SERIAL)
+    cloud = None
+    if entry.options.get(CONF_CLOUD_USERNAME) and entry.options.get(CONF_CLOUD_PASSWORD):
+        cloud = async_get_account(
+            hass,
+            entry.options[CONF_CLOUD_USERNAME],
+            entry.options[CONF_CLOUD_PASSWORD],
+            entry.options.get(CONF_CLOUD_URL) or EU_URL,
+        )
     if serial:
         entry.runtime_data.events = EventSource(
-            hass, serial, entry.data[CONF_PASSWORD], entry.options.get(CONF_PEOPLE_ONLY, False)
+            hass, serial, entry.data[CONF_PASSWORD], cloud, entry.options.get(CONF_PEOPLE_ONLY, False)
         )
     await _async_register_panel(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -106,6 +119,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: RecordingsConfigEntry) 
     others = [
         e for e in hass.config_entries.async_loaded_entries(DOMAIN) if e.entry_id != entry.entry_id
     ]
+    await async_release_unused(
+        hass, {account_key(e.options.get(CONF_CLOUD_USERNAME)) for e in others if e.options.get(CONF_CLOUD_USERNAME)}
+    )
     if not others:
         frontend.async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False)
         if (poller := hass.data.pop(DOMAIN, None)) is not None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 DOMAIN = "ezviz_recordings"
-VERSION = "0.4.3"  # keep in sync with manifest.json
+VERSION = "0.5.0"  # keep in sync with manifest.json
 
 CONF_SERIAL = "serial"
 EVENT_DETECTION = f"{DOMAIN}_detection"
@@ -13,6 +13,15 @@ SIGNAL_DETECTION = f"{DOMAIN}_detection_signal"
 PERSON_HOLD = 60  # seconds the person sensor stays on
 CONF_ALARM_ENTITY = "alarm_entity"
 CONF_PEOPLE_ONLY = "people_only"
+CONF_CLOUD_USERNAME = "cloud_username"
+CONF_CLOUD_PASSWORD = "cloud_password"
+CONF_CLOUD_URL = "cloud_url"
+CONF_SMS_CODE = "sms_code"
+
+# EZVIZ cloud regions (API hosts), as in the official EZVIZ integration
+EU_URL = "apiieu.ezvizlife.com"
+RUSSIA_URL = "apirus.ezvizru.com"
+CLOUD_TIMEOUT = 25
 
 DEFAULT_USERNAME = "admin"
 DEFAULT_RTSP_PORT = 554
