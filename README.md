@@ -33,8 +33,12 @@ a local reachability check.
 
 ## Installation
 
-**HACS**: *HACS → three dots → Custom repositories*, add `https://github.com/caveman2024/ezviz-recordings`
-as an **Integration**, install **EZVIZ Recordings** and restart Home Assistant.
+**HACS** (recommended): open HACS, search for **EZVIZ Recordings**, install it and restart Home Assistant.
+
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=caveman2024&repository=ezviz-recordings&category=integration)
+
+If it does not show up yet, add it as a custom repository: *HACS → three dots → Custom repositories*,
+`https://github.com/caveman2024/ezviz-recordings`, type **Integration**.
 
 **Manual**: copy `custom_components/ezviz_recordings` into `config/custom_components/` and restart.
 
