@@ -45,14 +45,32 @@
           "username": "Nome utente",
           "password": "Codice di verifica"
         }
+      },
+      "reauth_confirm": {
+        "title": "Accesso all'account EZVIZ rifiutato",
+        "description": "EZVIZ non accetta più l'accesso di {account}, quindi gli eventi di rilevamento sono in pausa. Inserisci la password attuale dell'account EZVIZ.",
+        "data": {
+          "cloud_password": "Password dell'account EZVIZ"
+        }
+      },
+      "reauth_code": {
+        "title": "Codice di verifica EZVIZ",
+        "description": "EZVIZ ha mandato un codice di verifica al telefono o all'e-mail dell'account. Inseriscilo qui.",
+        "data": {
+          "sms_code": "Codice di verifica"
+        }
       }
     },
     "error": {
-      "cannot_connect": "La telecamera non risponde con questi dati."
+      "cannot_connect": "La telecamera non risponde con questi dati.",
+      "invalid_auth": "Account EZVIZ o password sbagliati.",
+      "cloud_unreachable": "Il cloud EZVIZ non risponde. Riprova più tardi.",
+      "invalid_code": "Codice di verifica sbagliato o scaduto."
     },
     "abort": {
       "already_configured": "Questa telecamera è già configurata.",
-      "reconfigure_successful": "Telecamera aggiornata."
+      "reconfigure_successful": "Telecamera aggiornata.",
+      "reauth_successful": "Account EZVIZ aggiornato. Gli eventi di rilevamento ripartono."
     }
   },
   "options": {

@@ -4,6 +4,10 @@ The user enters the EZVIZ account in the options of a camera; cameras with the s
 one session. The session token is kept in our own storage, so a restart refreshes it instead of
 logging in again (accounts with a verification code are asked for it only once, in the options).
 Nothing here touches the official EZVIZ integration.
+
+When EZVIZ refuses the login (password changed, verification code asked again, account locked) the
+account is not used any more: no further login is attempted and a reauthentication flow is started
+for the cameras that use it. After network errors the calls pause for a growing time.
 """
 
 from __future__ import annotations
@@ -12,20 +16,57 @@ import asyncio
 from collections.abc import Callable
 import hashlib
 import logging
+import time
 from typing import Any, TypeVar
 
-from pyezvizapi import EzvizClient
+from pyezvizapi import EzvizAuthTokenExpired, EzvizAuthVerificationCode, EzvizClient, PyEzvizError
+from pyezvizapi.exceptions import HTTPError, InvalidHost, InvalidURL
+import requests
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
-from .const import CLOUD_TIMEOUT, DOMAIN
+from .const import CLOUD_TIMEOUT, CONF_CLOUD_USERNAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 _T = TypeVar("_T")
 
 DATA_ACCOUNTS = f"{DOMAIN}_cloud_accounts"
 TOKEN_STORE_VERSION = 1
+
+# pause after a failed call: doubles at every failure in a row, up to the maximum
+BACKOFF_FIRST = 30
+BACKOFF_MAX = 1800
+
+NETWORK_ERRORS: tuple[type[BaseException], ...] = (requests.RequestException, InvalidURL, HTTPError, InvalidHost)
+# what pyezvizapi raises when a login is refused (it also logs in again by itself after a 401)
+LOGIN_REFUSED = (
+    "Incorrect Username",
+    "Incorrect Password",
+    "The user is locked",
+    "The MFA code is invalid",
+    "Login error",
+    "Login with account",
+)
+
+
+class CloudAuthError(Exception):
+    """EZVIZ refused the login; the account waits for the user to reauthenticate."""
+
+
+class CloudUnavailable(Exception):
+    """Calls are paused after an error."""
+
+
+def is_network_error(err: BaseException) -> bool:
+    return isinstance(err, NETWORK_ERRORS) or str(err).startswith("Impossible to decode")
+
+
+def is_login_refused(err: BaseException) -> bool:
+    """The credentials no longer work (as opposed to a network or API error)."""
+    if isinstance(err, (EzvizAuthVerificationCode, EzvizAuthTokenExpired)):
+        return True
+    return isinstance(err, PyEzvizError) and str(err).startswith(LOGIN_REFUSED)
 
 
 def account_key(username: Any) -> str:
@@ -65,9 +106,33 @@ class CloudAccount:
         self._client: EzvizClient | None = None
         self._lock = asyncio.Lock()
         self._store = _token_store(hass, username)
+        self.auth_failed = False
+        self._failures = 0
+        self._retry_at = 0.0
 
     def same_login(self, password: str, url: str) -> bool:
         return self._password == password and self._url == url
+
+    def _back_off(self, err: BaseException) -> None:
+        pause = min(BACKOFF_FIRST * 2**self._failures, BACKOFF_MAX)
+        self._failures += 1
+        self._retry_at = time.monotonic() + pause
+        _LOGGER.debug("EZVIZ cloud call failed (%s), next try in %s s", err, pause)
+
+    def _login_refused(self, err: BaseException) -> None:
+        """Stop using the account and ask the user to log in again."""
+        if self.auth_failed:
+            return
+        self.auth_failed = True
+        _LOGGER.warning(
+            "EZVIZ refused the login of the account used for detection events (%s); "
+            "the events stay paused until the camera is reauthenticated",
+            err,
+        )
+        key = account_key(self.username)
+        for entry in self.hass.config_entries.async_loaded_entries(DOMAIN):
+            if account_key(entry.options.get(CONF_CLOUD_USERNAME)) == key:
+                entry.async_start_reauth(self.hass)
 
     async def _async_open(self) -> EzvizClient:
         saved = await self._store.async_load()
@@ -75,30 +140,61 @@ class CloudAccount:
 
         def _open() -> tuple[EzvizClient, dict[str, Any]]:
             client = EzvizClient(self.username, self._password, (token or {}).get("api_url") or self._url, CLOUD_TIMEOUT, token=token)
-            return client, dict(client.login())
+            try:
+                return client, dict(client.login())
+            except Exception:
+                client.close_session()
+                raise
 
-        client, new_token = await self.hass.async_add_executor_job(_open)
+        try:
+            client, new_token = await self.hass.async_add_executor_job(_open)
+        except Exception as err:
+            if isinstance(err, PyEzvizError) and not is_network_error(err):
+                # the login itself failed: the credentials are not accepted any more
+                self._login_refused(err)
+                raise CloudAuthError(str(err)) from err
+            self._back_off(err)
+            raise CloudUnavailable(str(err)) from err
         if new_token != token:
             await self._store.async_save(new_token)
         return client
 
+    async def _async_drop(self, client: EzvizClient) -> None:
+        async with self._lock:
+            if self._client is client:
+                self._client = None
+                await self.hass.async_add_executor_job(client.close_session)
+
     async def async_call(self, func: Callable[[EzvizClient], _T]) -> _T:
-        """Run func(client) in the executor; on failure renew the session once and retry."""
+        """Run func(client) in the executor; on an API error renew the session once and retry.
+
+        Raises CloudAuthError while the account waits for reauthentication and CloudUnavailable
+        while the calls are paused; in both cases nothing is sent to EZVIZ.
+        """
         for attempt in (1, 2):
             async with self._lock:
+                if self.auth_failed:
+                    raise CloudAuthError("reauthentication required")
+                if time.monotonic() < self._retry_at:
+                    raise CloudUnavailable("paused after an error")
                 if self._client is None:
                     self._client = await self._async_open()
                 client = self._client
             try:
-                return await self.hass.async_add_executor_job(func, client)
-            except Exception:
-                if attempt == 2:
+                result = await self.hass.async_add_executor_job(func, client)
+            except Exception as err:
+                await self._async_drop(client)
+                if is_login_refused(err):
+                    self._login_refused(err)
+                    raise CloudAuthError(str(err)) from err
+                if attempt == 2 or is_network_error(err):
+                    self._back_off(err)
                     raise
-                _LOGGER.debug("EZVIZ cloud call failed, renewing the session")
-                async with self._lock:
-                    if self._client is client:
-                        self._client = None
-                        await self.hass.async_add_executor_job(client.close_session)
+                _LOGGER.debug("EZVIZ cloud call failed (%s), renewing the session", err)
+                continue
+            self._failures = 0
+            self._retry_at = 0.0
+            return result
         raise RuntimeError("unreachable")
 
     async def async_close(self) -> None:
@@ -116,6 +212,13 @@ def async_get_account(hass: HomeAssistant, username: str, password: str, url: st
     if account is None or not account.same_login(password, url):
         account = accounts[key] = CloudAccount(hass, username.strip(), password, url)
     return account
+
+
+async def async_forget_account(hass: HomeAssistant, username: str) -> None:
+    """Drop the session of an account after a new login, so its cameras start again from a clean state."""
+    accounts: dict[str, CloudAccount] = hass.data.get(DATA_ACCOUNTS, {})
+    if (account := accounts.pop(account_key(username), None)) is not None:
+        await account.async_close()
 
 
 async def async_release_unused(hass: HomeAssistant, in_use: set[str]) -> None:

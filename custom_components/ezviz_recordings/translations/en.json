@@ -45,14 +45,32 @@
           "username": "User name",
           "password": "Verification code"
         }
+      },
+      "reauth_confirm": {
+        "title": "EZVIZ account login refused",
+        "description": "EZVIZ no longer accepts the login of {account}, so detection events are paused. Enter the current password of the EZVIZ account.",
+        "data": {
+          "cloud_password": "EZVIZ account password"
+        }
+      },
+      "reauth_code": {
+        "title": "EZVIZ verification code",
+        "description": "EZVIZ sent a verification code to the phone or e-mail of the account. Enter it here.",
+        "data": {
+          "sms_code": "Verification code"
+        }
       }
     },
     "error": {
-      "cannot_connect": "The camera did not answer with these details."
+      "cannot_connect": "The camera did not answer with these details.",
+      "invalid_auth": "Wrong EZVIZ account or password.",
+      "cloud_unreachable": "The EZVIZ cloud did not answer. Try again later.",
+      "invalid_code": "Wrong or expired verification code."
     },
     "abort": {
       "already_configured": "This camera is already configured.",
-      "reconfigure_successful": "Camera updated."
+      "reconfigure_successful": "Camera updated.",
+      "reauth_successful": "EZVIZ account updated. Detection events start again."
     }
   },
   "options": {

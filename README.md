@@ -56,7 +56,7 @@ The connection is tested before the camera is added. Address and code can be cha
 | Alarm | An `alarm_control_panel` entity: its armed periods are drawn on the timeline, and detections carry `armed: true` while it is armed. |
 | Serial number | Needed to read the detection events of this camera. |
 | The camera detects people only | Turn it on if the camera is set to human detection only: every detection then counts as a person. |
-| EZVIZ account, password, region | Your EZVIZ cloud login, used to read the detection events and their snapshots. Enter it in one camera and leave the password empty in the others: cameras with the same account share one session. If EZVIZ asks for a verification code (SMS or e-mail), it is asked once here. Leave the account empty to use the SD card only. |
+| EZVIZ account, password, region | Your EZVIZ cloud login, used to read the detection events and their snapshots. Enter it in one camera and leave the password empty in the others: cameras with the same account share one session. If EZVIZ asks for a verification code (SMS or e-mail), it is asked once here. Leave the account empty to use the SD card only. If EZVIZ later refuses the login (password changed, a new verification code asked), the events pause and Home Assistant asks you to reauthenticate the camera; the integration does not try again by itself. |
 
 ## What you get
 

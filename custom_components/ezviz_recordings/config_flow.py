@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from typing import Any
 from urllib.parse import quote
 
@@ -10,7 +11,7 @@ from pyezvizapi import EzvizAuthVerificationCode, PyEzvizError
 import voluptuous as vol
 
 from homeassistant.components.ffmpeg import get_ffmpeg_manager
-from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr, entity_registry as er
@@ -25,7 +26,7 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
-from .cloud import account_key, async_save_token, cloud_login
+from .cloud import account_key, async_forget_account, async_save_token, cloud_login, is_network_error
 from .const import (
     CONF_ALARM_ENTITY,
     CONF_CLOUD_PASSWORD,
@@ -63,6 +64,44 @@ async def _can_connect(hass: HomeAssistant, host: str, port: int, username: str,
         return False
 
 
+async def _async_cloud_login(
+    hass: HomeAssistant, username: str, password: str, url: str, sms_code: int | None = None
+) -> tuple[str | None, str]:
+    """Log in to the EZVIZ cloud; return (error, url) where url is the account's region."""
+    try:
+        token = await hass.async_add_executor_job(cloud_login, username, password, url, sms_code)
+    except EzvizAuthVerificationCode:
+        return "mfa_required", url
+    except Exception as err:  # noqa: BLE001 - pyezvizapi and network (requests) errors
+        if isinstance(err, PyEzvizError) and not is_network_error(err):
+            return "invalid_auth", url
+        return "cloud_unreachable", url
+    await async_save_token(hass, username, token)
+    return None, str(token.get("api_url") or url)
+
+
+async def _async_use_new_login(
+    hass: HomeAssistant, username: str, password: str, url: str, *, skip_entry_id: str | None = None, flow_id: str | None = None
+) -> None:
+    """After a successful login: give the password to every camera of the account, restart them
+    on a fresh session and close their pending reauthentication requests."""
+    await async_forget_account(hass, username)
+    key = account_key(username)
+    entry_ids: set[str] = set()
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if account_key(entry.options.get(CONF_CLOUD_USERNAME)) != key:
+            continue
+        entry_ids.add(entry.entry_id)
+        if entry.entry_id == skip_entry_id:
+            continue
+        options = {**entry.options, CONF_CLOUD_PASSWORD: password, CONF_CLOUD_URL: url}
+        if not hass.config_entries.async_update_entry(entry, options=options):
+            hass.config_entries.async_schedule_reload(entry.entry_id)
+    for flow in hass.config_entries.flow.async_progress_by_handler(DOMAIN, match_context={"source": SOURCE_REAUTH}):
+        if flow["flow_id"] != flow_id and flow["context"].get("entry_id") in entry_ids:
+            hass.config_entries.flow.async_abort(flow["flow_id"])
+
+
 class EzvizRecordingsConfigFlow(ConfigFlow, domain=DOMAIN):
     """Add one camera per config entry."""
 
@@ -75,6 +114,7 @@ class EzvizRecordingsConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         self._import: dict[str, Any] = {}
+        self._reauth_password = ""
 
     def _ezviz_cameras(self) -> dict[str, dict[str, Any]]:
         """Cameras known to the official EZVIZ integration, from the device registry (name and local IP only)."""
@@ -195,6 +235,57 @@ class EzvizRecordingsConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
+        """EZVIZ refused the login of the cloud account (password changed, or a new code is asked)."""
+        return await self.async_step_reauth_confirm()
+
+    async def _async_reauth_login(self, sms_code: int | None = None) -> ConfigFlowResult | str:
+        """Log in with the new password; return the flow result, or an error key."""
+        entry = self._get_reauth_entry()
+        username = entry.options[CONF_CLOUD_USERNAME]
+        error, url = await _async_cloud_login(
+            self.hass, username, self._reauth_password, entry.options.get(CONF_CLOUD_URL) or EU_URL, sms_code
+        )
+        if error == "mfa_required" and sms_code is None:
+            return await self.async_step_reauth_code()
+        if error is not None:
+            return error
+        await _async_use_new_login(self.hass, username, self._reauth_password, url, flow_id=self.flow_id)
+        return self.async_abort(reason="reauth_successful")
+
+    async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._reauth_password = user_input[CONF_CLOUD_PASSWORD]
+            result = await self._async_reauth_login()
+            if not isinstance(result, str):
+                return result
+            errors["base"] = result
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema({vol.Required(CONF_CLOUD_PASSWORD): PASSWORD_SELECTOR}),
+            description_placeholders={"account": str(self._get_reauth_entry().options.get(CONF_CLOUD_USERNAME, ""))},
+            errors=errors,
+        )
+
+    async def async_step_reauth_code(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """The account asked for a verification code (sent by SMS or e-mail)."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            code = str(user_input[CONF_SMS_CODE]).strip()
+            if not code.isdigit():
+                errors["base"] = "invalid_code"
+            else:
+                result = await self._async_reauth_login(int(code))
+                if not isinstance(result, str):
+                    return result
+                errors["base"] = "invalid_code" if result in ("mfa_required", "invalid_auth") else result
+        return self.async_show_form(
+            step_id="reauth_code",
+            data_schema=vol.Schema({vol.Required(CONF_SMS_CODE): str}),
+            errors=errors,
+        )
+
 
 class EzvizRecordingsOptionsFlow(OptionsFlow):
     """Alarm entity, serial and the EZVIZ cloud account used to read detection events."""
@@ -210,21 +301,18 @@ class EzvizRecordingsOptionsFlow(OptionsFlow):
                 return str(entry.options[CONF_CLOUD_PASSWORD])
         return None
 
-    async def _async_try_login(self, sms_code: int | None = None) -> tuple[str | None, str | None]:
-        """Log in with the pending account; return (error, None) or (None, api_url)."""
+    async def _async_try_login(self, sms_code: int | None = None) -> tuple[str | None, str]:
+        """Log in with the pending account; return (error, api_url)."""
         data = self._pending
-        try:
-            token = await self.hass.async_add_executor_job(
-                cloud_login, data[CONF_CLOUD_USERNAME], data[CONF_CLOUD_PASSWORD], data[CONF_CLOUD_URL], sms_code
+        error, url = await _async_cloud_login(
+            self.hass, data[CONF_CLOUD_USERNAME], data[CONF_CLOUD_PASSWORD], data[CONF_CLOUD_URL], sms_code
+        )
+        if error is None:
+            await _async_use_new_login(
+                self.hass, data[CONF_CLOUD_USERNAME], data[CONF_CLOUD_PASSWORD], url,
+                skip_entry_id=self.config_entry.entry_id,
             )
-        except EzvizAuthVerificationCode:
-            return "mfa_required", None
-        except PyEzvizError:
-            return "invalid_auth", None
-        except Exception:  # noqa: BLE001 - network errors (requests/urllib3)
-            return "cloud_unreachable", None
-        await async_save_token(self.hass, data[CONF_CLOUD_USERNAME], token)
-        return None, str(token.get("api_url") or data[CONF_CLOUD_URL])
+        return error, url
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
