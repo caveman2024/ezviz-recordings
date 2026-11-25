@@ -93,6 +93,29 @@ link: /ezviz-recordings?camera=Garden&t=2026-11-10T22:00:03       # panel, ten s
 Events are read every 10 seconds while the alarm entity is armed and every 5 minutes otherwise. They
 reach Home Assistant through the EZVIZ cloud, so expect a delay of a few seconds to a minute.
 
+**Services**, to keep a copy of a detection, for example to upload it off-site:
+
+| Service | |
+|---|---|
+| `ezviz_recordings.save_event_image` | Saves the snapshot of a detection (`event_id` from the event above) to a JPEG file. |
+| `ezviz_recordings.save_clip` | Saves a piece of the SD-card recording (`start`, `duration` in seconds) to an MP4 file, audio included. It waits until the end of the piece has been recorded, then copies it at real-time speed, so it can start before the detection: the moment the person appears is on the card even when the event reaches Home Assistant later. |
+
+Both take the camera as `entry_id` (as in the event) or `camera` (its name), and a `filename` in a folder
+Home Assistant may write to (`/media` is allowed). They return the file name and size.
+
+```yaml
+# the 40 seconds around a detection, from 10 seconds before
+action: ezviz_recordings.save_clip
+data:
+  entry_id: "{{ trigger.event.data.entry_id }}"
+  start: "{{ (as_datetime(trigger.event.data.time) - timedelta(seconds=10)).isoformat() }}"
+  duration: 40
+  filename: "/media/alarm/{{ trigger.event.data.camera | lower }}_{{ as_datetime(trigger.event.data.time).strftime('%Y%m%d_%H%M%S') }}.mp4"
+```
+
+While a clip is being saved, a replay open in the panel on the same camera is stopped (the camera
+serves one SD playback at a time).
+
 ## Blueprints
 
 [![Import person blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fcaveman2024%2Fezviz-recordings%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fezviz_recordings%2Fperson_detected_notification.yaml)
