@@ -1,0 +1,48 @@
+save_clip:
+  fields:
+    entry_id:
+      example: 01M7275NEFBK57DB3MJMYWNGC7
+      selector:
+        config_entry:
+          integration: ezviz_recordings
+    camera:
+      example: Garden
+      selector:
+        text:
+    start:
+      required: true
+      example: "2026-11-24T11:15:23"
+      selector:
+        text:
+    duration:
+      default: 40
+      selector:
+        number:
+          min: 1
+          max: 600
+          unit_of_measurement: s
+    filename:
+      required: true
+      example: "/media/alarm/garden_20261124_111523_sd.mp4"
+      selector:
+        text:
+save_event_image:
+  fields:
+    entry_id:
+      example: 01M7275NEFBK57DB3MJMYWNGC7
+      selector:
+        config_entry:
+          integration: ezviz_recordings
+    camera:
+      example: Garden
+      selector:
+        text:
+    event_id:
+      required: true
+      selector:
+        text:
+    filename:
+      required: true
+      example: "/media/alarm/garden_20261124_111533.jpg"
+      selector:
+        text:

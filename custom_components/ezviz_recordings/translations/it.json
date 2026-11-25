@@ -125,5 +125,55 @@
         "name": "Raggiungibile"
       }
     }
+  },
+  "services": {
+    "save_clip": {
+      "name": "Salva filmato",
+      "description": "Salva in un file un pezzo della registrazione sulla SD. Aspetta che la fine del pezzo sia stata registrata, poi lo copia a velocità normale.",
+      "fields": {
+        "entry_id": {
+          "name": "Telecamera (voce)",
+          "description": "La telecamera (voce di configurazione). Indica questa o il nome della telecamera."
+        },
+        "camera": {
+          "name": "Nome della telecamera",
+          "description": "Il nome della telecamera, in alternativa alla voce di configurazione."
+        },
+        "start": {
+          "name": "Inizio",
+          "description": "Inizio del filmato, in ora locale (l'orologio della telecamera), per esempio l'ora di un rilevamento meno 10 secondi."
+        },
+        "duration": {
+          "name": "Durata",
+          "description": "Durata del filmato in secondi."
+        },
+        "filename": {
+          "name": "Nome del file",
+          "description": "Percorso del file MP4 da scrivere; la cartella deve essere consentita in allowlist_external_dirs (/media lo è)."
+        }
+      }
+    },
+    "save_event_image": {
+      "name": "Salva foto dell'evento",
+      "description": "Salva in un file la foto di un rilevamento.",
+      "fields": {
+        "entry_id": {
+          "name": "Telecamera (voce)",
+          "description": "La telecamera (voce di configurazione). Indica questa o il nome della telecamera."
+        },
+        "camera": {
+          "name": "Nome della telecamera",
+          "description": "Il nome della telecamera, in alternativa alla voce di configurazione."
+        },
+        "event_id": {
+          "name": "ID dell'evento",
+          "description": "L'event_id dell'evento ezviz_recordings_detection."
+        },
+        "filename": {
+          "name": "Nome del file",
+          "description": "Percorso del file JPEG da scrivere; la cartella deve essere consentita in allowlist_external_dirs (/media lo è)."
+        }
+      }
+    }
   }
 }

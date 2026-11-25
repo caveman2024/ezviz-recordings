@@ -35,6 +35,7 @@ from .events import EventSource
 from .playback import RecordingCamera
 from .http_views import EventImageView, RecordingMp4View
 from .poller import DetectionPoller
+from .services import async_register_services
 from .websocket_api import async_register_websocket_commands
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -51,6 +52,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async_register_websocket_commands(hass)
     hass.http.register_view(RecordingMp4View(hass))
     hass.http.register_view(EventImageView(hass))
+    async_register_services(hass)
     return True
 
 

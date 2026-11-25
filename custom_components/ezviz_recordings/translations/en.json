@@ -125,5 +125,55 @@
         "name": "Reachable"
       }
     }
+  },
+  "services": {
+    "save_clip": {
+      "name": "Save clip",
+      "description": "Saves a piece of the SD-card recording to a file. It waits until the end of the clip has been recorded, then copies it at real-time speed.",
+      "fields": {
+        "entry_id": {
+          "name": "Camera entry",
+          "description": "The camera (config entry). Give this or the camera name."
+        },
+        "camera": {
+          "name": "Camera name",
+          "description": "The camera name, as an alternative to the config entry."
+        },
+        "start": {
+          "name": "Start",
+          "description": "Start of the clip, in local time (the camera clock), e.g. the time of a detection minus 10 seconds."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "Length of the clip in seconds."
+        },
+        "filename": {
+          "name": "File name",
+          "description": "Path of the MP4 file to write; the folder must be allowed in allowlist_external_dirs (/media is)."
+        }
+      }
+    },
+    "save_event_image": {
+      "name": "Save event image",
+      "description": "Saves the snapshot of a detection to a file.",
+      "fields": {
+        "entry_id": {
+          "name": "Camera entry",
+          "description": "The camera (config entry). Give this or the camera name."
+        },
+        "camera": {
+          "name": "Camera name",
+          "description": "The camera name, as an alternative to the config entry."
+        },
+        "event_id": {
+          "name": "Event ID",
+          "description": "The event_id of the ezviz_recordings_detection event."
+        },
+        "filename": {
+          "name": "File name",
+          "description": "Path of the JPEG file to write; the folder must be allowed in allowlist_external_dirs (/media is)."
+        }
+      }
+    }
   }
 }
